@@ -90,7 +90,7 @@ not enough). Then:
 - Claude Desktop and Claude Code use separate config files. If you already
   configured the server in Claude Desktop and want it in Claude Code too, you
   can import it with `claude mcp add-from-claude-desktop`.
-- `OPENPROJECT_READ_PROJECTS` accepts comma-separated identifiers, names, or
+- `OPENPROJECT_READ_PROJECTS` accepts comma-separated project identifiers, numeric ids, or
   glob patterns: `project-one,team-*`. Use `*` for all visible projects.
 - `OPENPROJECT_WRITE_PROJECTS` is the real write gate: the project-scoped
   write-category flags (like `OPENPROJECT_ENABLE_WORK_PACKAGE_WRITE`) are on

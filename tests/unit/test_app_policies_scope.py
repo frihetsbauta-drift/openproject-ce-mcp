@@ -28,10 +28,7 @@ def test_scope_matches_candidates_glob_and_case_insensitive() -> None:
 def test_project_link_candidates_recovers_identifier_via_cache() -> None:
     link = {"href": "/api/v3/projects/7", "title": "Demo Project"}
     candidates = scope.project_link_candidates(link, settings=make_settings(), project_id_to_identifier={7: "DEMO"})
-    assert "demo" in candidates
-    assert "7" in candidates
-    assert "demo project" in candidates
-    assert "demo-project" in candidates
+    assert candidates == {"7", "demo"}
 
 
 def test_project_link_candidates_without_cache_entry_lacks_identifier() -> None:
@@ -41,10 +38,10 @@ def test_project_link_candidates_without_cache_entry_lacks_identifier() -> None:
     assert "7" in candidates
 
 
-def test_project_payload_candidates_are_id_identifier_and_name() -> None:
+def test_project_payload_candidates_are_id_and_identifier_never_the_name() -> None:
     payload = {"id": 1, "identifier": "demo", "name": "Demo  Project"}
     candidates = scope.project_payload_candidates(payload)
-    assert candidates == {"1", "demo", "demo project", "demo-project"}
+    assert candidates == {"1", "demo"}
 
 
 def test_ensure_project_link_allowed_raises_when_no_candidate_matches() -> None:

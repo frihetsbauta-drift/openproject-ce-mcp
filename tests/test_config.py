@@ -725,3 +725,21 @@ def test_a_number_from_the_environment_must_be_finite(name: str, value: str) -> 
 
     with pytest.raises(ConfigError, match=f"{name} must be a finite number"):
         Settings.from_env(env)
+
+
+_SCOPE_ENV = {"OPENPROJECT_BASE_URL": "https://op.example.com", "OPENPROJECT_API_TOKEN": "token"}
+
+
+@pytest.mark.parametrize("variable", ["OPENPROJECT_READ_PROJECTS", "OPENPROJECT_WRITE_PROJECTS"])
+@pytest.mark.parametrize(
+    "pattern", ["tst", "TST", "team-*", "my_project", "12", "a?b", "[ab]c", "[!a]x", "[a-c]1", "*", "demo, TST"]
+)
+def test_project_scope_accepts_identifier_id_and_glob_patterns(variable: str, pattern: str) -> None:
+    Settings.from_env({**_SCOPE_ENV, variable: pattern})
+
+
+@pytest.mark.parametrize("variable", ["OPENPROJECT_READ_PROJECTS", "OPENPROJECT_WRITE_PROJECTS"])
+@pytest.mark.parametrize("pattern", ["My Project", "demo, My Project", "a.b", "a/b", "a!b", "[", "[!]", "[a", "naïve"])
+def test_project_scope_rejects_a_pattern_that_cannot_match_an_identifier(variable: str, pattern: str) -> None:
+    with pytest.raises(ConfigError, match=rf"{variable} pattern .* cannot match a project"):
+        Settings.from_env({**_SCOPE_ENV, variable: pattern})

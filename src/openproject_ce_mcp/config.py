@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import math
 import os
+import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -393,8 +394,8 @@ class Settings:
         env = os.environ if environ is None else environ
         base_url = _parse_base_url(env.get("OPENPROJECT_BASE_URL"))
         api_token = _require_non_empty(env.get("OPENPROJECT_API_TOKEN"), "OPENPROJECT_API_TOKEN")
-        read_projects = _parse_csv(env.get("OPENPROJECT_READ_PROJECTS"))
-        write_projects = _parse_csv(env.get("OPENPROJECT_WRITE_PROJECTS"))
+        read_projects = _parse_project_scope(env, "OPENPROJECT_READ_PROJECTS")
+        write_projects = _parse_project_scope(env, "OPENPROJECT_WRITE_PROJECTS")
         group_flags = {g.read_attr: _bool_env(env, g.read_env_var, default=g.read_default) for g in TOOL_GROUPS}
         group_flags |= {
             g.write.attr: _bool_env(env, g.write.env_var, default=g.write.default)
@@ -578,6 +579,22 @@ def _parse_csv(value: str | None) -> tuple[str, ...]:
     items = [" ".join(part.split()) for part in value.split(",")]
     normalized = tuple(item for item in items if item)
     return normalized
+
+
+# An identifier holds letters, digits, hyphens and underscores, and an id holds digits: a pattern with any
+# other character, a project name for one, can never match and would silently grant nothing.
+_PROJECT_SCOPE_PATTERN = re.compile(r"(?:[A-Za-z0-9_*?-]|\[!?[A-Za-z0-9_-]+\])+")
+
+
+def _parse_project_scope(env: Mapping[str, str], name: str) -> tuple[str, ...]:
+    patterns = _parse_csv(env.get(name))
+    for pattern in patterns:
+        if not _PROJECT_SCOPE_PATTERN.fullmatch(pattern):
+            raise ConfigError(
+                f"{name} pattern {pattern!r} cannot match a project: use project identifiers or numeric ids "
+                "(letters, digits, '-', '_') with the wildcards '*', '?' and [abc]; a project name does not match."
+            )
+    return patterns
 
 
 def _parse_int(value: str | None, name: str, *, default: int, minimum: int) -> int:

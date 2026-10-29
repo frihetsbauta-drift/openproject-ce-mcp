@@ -163,7 +163,7 @@ recommended example uses a plain literal token either way.
   into `mcp.json`; Continue rejects it.
 - A standalone YAML file under `.continue/mcpServers/` needs its own top-level
   `name`/`version`/`schema` fields; the JSON variant (`mcp.json`) does not.
-- `OPENPROJECT_READ_PROJECTS` accepts comma-separated identifiers, names, or
+- `OPENPROJECT_READ_PROJECTS` accepts comma-separated project identifiers, numeric ids, or
   glob patterns: `project-one,team-*`. Use `*` for all visible projects.
 - `OPENPROJECT_WRITE_PROJECTS` is the real write gate: the project-scoped
   write-category flags (like `OPENPROJECT_ENABLE_WORK_PACKAGE_WRITE`) are on by

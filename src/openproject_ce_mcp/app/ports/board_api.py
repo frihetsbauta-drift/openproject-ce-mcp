@@ -40,9 +40,9 @@ class BoardRecord:
     href/id, because `_ensure_board_payload_allowed`/
     `_ensure_board_write_payload_allowed` pass the whole raw link into
     `scope.ensure_project_link_allowed`/`ensure_project_write_link_allowed`,
-    and `scope.project_link_candidates()` also reads `link.get("title")` off it,
-    not just `href` -- a synthesized `{"href": ...}` would silently drop
-    title-based matching (same rationale as GridRecord.scope_link).
+    which classify the raw link itself (missing, null or undisclosed href); a
+    synthesized `{"href": ...}` would erase those states (same rationale as
+    GridRecord.scope_link).
     """
 
     summary: BoardSummary

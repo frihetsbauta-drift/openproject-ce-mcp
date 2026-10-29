@@ -791,7 +791,7 @@ async def test_list_versions_global_backfills_after_allowlist_filter() -> None:
     # must be walked (pageSize=max_page_size), paginating the 3 filtered survivors.
     import dataclasses
 
-    settings = dataclasses.replace(make_settings(), read_projects=("demo",))
+    settings = dataclasses.replace(make_settings(), read_projects=("demo-*",))
 
     def version_item(item_id: int, allowed: bool) -> dict:
         title = "Demo" if allowed else "Secret Project"
@@ -823,7 +823,7 @@ async def test_list_versions_global_backfills_after_allowlist_filter() -> None:
             )
         raise AssertionError(f"Unexpected request: {request.method} {request.url}")
 
-    # Allowed by name: three projects share the display name "Demo".
+    # Allowed by identifier prefix: the three even-numbered projects.
     projects = [(i, f"demo-{i}", "Demo") if i % 2 == 0 else (i, f"secret-{i}", "Secret Project") for i in range(1, 7)]
     client = await started_client(settings, handler, projects)
     page = await client.version.list(limit=2)

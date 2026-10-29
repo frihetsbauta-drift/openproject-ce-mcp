@@ -99,21 +99,17 @@ def _without_uncovered_parents(
 ) -> ProjectSummary:
     # A readable project can sit below parents the read allowlist does not cover; their names
     # and display ids must not reach the result through the parent link or the ancestor chain.
-    def covered(project_id: int | None, name: str | None) -> bool:
+    def covered(project_id: int | None) -> bool:
         if scope_policy.scope_allows_all(settings.read_projects):
             return True
         return project_id is not None and scope_policy.project_known_by_id_allowed(
-            project_id, name, settings=settings, project_id_to_identifier=project_id_to_identifier
+            project_id, settings=settings, project_id_to_identifier=project_id_to_identifier
         )
 
-    if value.parent_id is not None and not covered(value.parent_id, value.parent_name):
+    if value.parent_id is not None and not covered(value.parent_id):
         value = replace(value, parent_id=None, parent_name=None)
     if isinstance(value, ProjectDetail) and value.ancestors:
-        kept = [
-            entry
-            for entry in value.ancestors
-            if covered(scope_policy.id_from_href(entry.get("href")), entry.get("title"))
-        ]
+        kept = [entry for entry in value.ancestors if covered(scope_policy.id_from_href(entry.get("href")))]
         # The cap flag stays only when nothing was left out, as for the work package hierarchy: a
         # flag kept after dropping entries would show that more ancestors exist.
         value = replace(
@@ -245,11 +241,7 @@ class ProjectService:
         parent: str | object | None = None,
         confirm: bool = False,
     ) -> ProjectWriteResult:
-        project_policy_module.ensure_project_create_target_allowed(
-            identifier=identifier,
-            name=name,
-            settings=self._settings,
-        )
+        project_policy_module.ensure_project_create_target_allowed(identifier=identifier, settings=self._settings)
         payload = await self._build_write_payload(
             name=name,
             identifier=identifier,
@@ -368,11 +360,7 @@ class ProjectService:
         source_record = await self._resolver.resolve_record(source_project, write=True)
         # Also validate the destination so a copy cannot create a project outside
         # the read/write allowlist (the source being allowed is not sufficient).
-        project_policy_module.ensure_project_create_target_allowed(
-            identifier=identifier,
-            name=name,
-            settings=self._settings,
-        )
+        project_policy_module.ensure_project_create_target_allowed(identifier=identifier, settings=self._settings)
         project = source_record.summary
         payload = await self._build_write_payload(
             name=name,

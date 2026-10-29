@@ -64,16 +64,18 @@ flag skips the connection test and preview and writes directly.
 
 | Variable | Required | Default | Description |
 | --- | --- | --- | --- |
-| `OPENPROJECT_READ_PROJECTS` | no | empty (nothing readable) | Readable projects; comma-separated identifiers, names, or glob patterns (e.g. `my-project,team-*`); `*` allows all visible projects; empty or unset denies all project-scoped reads |
+| `OPENPROJECT_READ_PROJECTS` | no | empty (nothing readable) | Readable projects; comma-separated project identifiers, numeric ids, or glob patterns (e.g. `my-project,team-*`); `*` allows all visible projects; empty or unset denies all project-scoped reads |
 | `OPENPROJECT_WRITE_PROJECTS` | no | empty (nothing writable) | Writable projects; empty or unset disables all project-scoped writes; always intersected with read scope — so `*` here writes-enables every project that `OPENPROJECT_READ_PROJECTS` also allows, not every project on the instance regardless of read scope |
 
-A pattern matches a project's numeric id, its current identifier and its
-name, also with the name's spaces written as hyphens (`my-project` matches
-"My Project"). Passing a former identifier to a tool does not make a
-renamed project match: OpenProject 17.3 and later still finds the project by
-it, but the check uses the project's current values.
+A pattern matches a project's numeric id or its current identifier, never its
+name: a name is free text that any project admin can change and that is not
+unique. A pattern may hold letters, digits, `-` and `_` and the wildcards `*`,
+`?` and `[abc]`; any other pattern (a name with spaces, for example) stops the
+server at start with a configuration error. Passing a former identifier to a
+tool does not make a renamed project match: OpenProject 17.3 and later still
+finds the project by it, but the check uses the project's current values.
 
-Content such as a list of work packages links its project by id and name only.
+Content such as a list of work packages links its project by id only.
 When either list matches a linked project by its identifier alone, the server
 reads the project's current identifier before it checks the response, one
 request per project and response.

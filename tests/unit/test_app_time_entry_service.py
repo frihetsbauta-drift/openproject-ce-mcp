@@ -894,15 +894,27 @@ def _activity_with_projects(*projects: tuple[str, str]) -> dict:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("scope", [("demo",), ("Demo Project",)], ids=["by identifier", "by name"])
-async def test_list_activities_names_only_projects_the_read_scope_covers(scope) -> None:
+async def test_list_activities_names_only_projects_the_read_scope_covers() -> None:
     activity = _activity_with_projects(("demo", "Demo Project"), ("secret-x", "Secret X"))
     api = _RealActivityNormalizerApi(fetch_activities_result={"_embedded": {"elements": [activity]}})
-    service = _service(api=api, settings=dataclasses.replace(make_settings(), read_projects=scope))
+    service = _service(api=api, settings=dataclasses.replace(make_settings(), read_projects=("demo",)))
 
     result = await service.list_activities()
 
     assert result.results[0].projects == ["Demo Project"]
+
+
+@pytest.mark.asyncio
+async def test_list_activities_never_covers_a_project_by_its_name() -> None:
+    activity = _activity_with_projects(("demo", "Demo Project"), ("secret-x", "Secret X"))
+    api = _RealActivityNormalizerApi(fetch_activities_result={"_embedded": {"elements": [activity]}})
+    service = _service(
+        api=api, settings=dataclasses.replace(make_settings(), read_projects=("Demo Project", "demo-project"))
+    )
+
+    result = await service.list_activities()
+
+    assert not result.results[0].projects
 
 
 @pytest.mark.asyncio

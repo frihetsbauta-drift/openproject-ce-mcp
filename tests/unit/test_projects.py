@@ -865,12 +865,19 @@ async def test_job_status_documents_news_and_wiki() -> None:
 
 
 @pytest.mark.asyncio
-async def test_project_scoped_reads_accept_numeric_project_ids_when_allowed_by_name() -> None:
+async def test_project_scoped_reads_accept_numeric_project_ids_when_allowed_by_identifier() -> None:
     async def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path == "/api/v3/work_packages/Scoped":
             return httpx.Response(404, json={"message": "not found"}, request=request)
         if request.url.path == "/api/v3/projects":
-            return httpx.Response(200, json={"total": 0, "_embedded": {"elements": []}}, request=request)
+            return httpx.Response(
+                200,
+                json={
+                    "total": 1,
+                    "_embedded": {"elements": [{"_type": "Project", "id": 6, "name": "Demo", "identifier": "demo"}]},
+                },
+                request=request,
+            )
         if request.url.path == "/api/v3/projects/6":
             return httpx.Response(
                 200,

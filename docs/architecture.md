@@ -386,9 +386,9 @@ tools_<domain>.py (MCP presentation)
 
 ### Project allowlist directory
 
-A HAL project link carries only an `href` and a `title`, so an identifier- or
-name-based allowlist (`OPM`, `IT*`) can match a linked project only through a
-numeric id to identifier map. `ProjectDirectoryService`
+A HAL project link carries an `href` and a `title`, and the title never counts
+for the allowlist, so an identifier-based allowlist (`OPM`, `IT*`) can match a
+linked project only through a numeric id to identifier map. `ProjectDirectoryService`
 (`app/services/project_directory_service.py`) is the single owner and only
 writer of that map; every service and policy receives it read-only
 (`Mapping[int, str]`). The directory scans `GET /projects` at startup and learns

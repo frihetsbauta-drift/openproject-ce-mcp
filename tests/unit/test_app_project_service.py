@@ -1013,6 +1013,17 @@ async def test_a_covered_parent_stays_but_only_when_its_identifier_is_known() ->
 
 
 @pytest.mark.asyncio
+async def test_a_parent_is_never_covered_by_its_name() -> None:
+    record = _record_below((2, "Open Middle"), [])
+
+    project = await _scoped_service(record, read=("demo", "Open Middle", "open-middle"), known={2: "om-ident"}).get(
+        "demo"
+    )
+
+    assert (project.parent_id, project.parent_name) == (None, None)
+
+
+@pytest.mark.asyncio
 async def test_a_parent_named_by_the_scope_pattern_stays_under_every_project_scope() -> None:
     record = _record_below((3, "Secret Branch"), _BELOW_SECRET)
 

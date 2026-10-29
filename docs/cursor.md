@@ -113,7 +113,7 @@ preferred for per-project permissions; for credentials specifically, the
   project permissions
 - After changing the config, run "Reload Window" from the command palette so
   Cursor picks up the change
-- `OPENPROJECT_READ_PROJECTS` accepts comma-separated identifiers, names, or
+- `OPENPROJECT_READ_PROJECTS` accepts comma-separated project identifiers, numeric ids, or
   glob patterns: `project-one,team-*`. Use `*` for all visible projects
 - `OPENPROJECT_WRITE_PROJECTS` is the real write gate: the project-scoped
   write-category flags (like `OPENPROJECT_ENABLE_WORK_PACKAGE_WRITE`) are on by

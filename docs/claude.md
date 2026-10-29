@@ -163,7 +163,7 @@ across every project the way this User-scope option does.
 - After changing the config, reload MCP servers: run "Developer: Reload Window"
   from the command palette (**Cmd+Shift+P** on macOS, **Ctrl+Shift+P** on
   Windows/Linux)
-- `OPENPROJECT_READ_PROJECTS` accepts comma-separated identifiers, names, or
+- `OPENPROJECT_READ_PROJECTS` accepts comma-separated project identifiers, numeric ids, or
   glob patterns: `project-one,team-*`. Use `*` for all visible projects
 - `OPENPROJECT_WRITE_PROJECTS` is the real write gate: the project-scoped
   write-category flags (like `OPENPROJECT_ENABLE_WORK_PACKAGE_WRITE`) are on by

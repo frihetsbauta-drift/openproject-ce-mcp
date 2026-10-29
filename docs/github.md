@@ -128,7 +128,7 @@ Workspace-scoped setup (above) is the preferred method.
 - Switch Copilot Chat to Agent mode so MCP tools are available
 - Workspace-scoped setup (`.vscode/mcp.json`) is preferred for fine-grained
   project permissions
-- `OPENPROJECT_READ_PROJECTS` accepts comma-separated identifiers, names, or
+- `OPENPROJECT_READ_PROJECTS` accepts comma-separated project identifiers, numeric ids, or
   glob patterns: `project-one,team-*`. Use `*` for all visible projects
 - `OPENPROJECT_WRITE_PROJECTS` is the real write gate: the project-scoped
   write-category flags (like `OPENPROJECT_ENABLE_WORK_PACKAGE_WRITE`) are on by

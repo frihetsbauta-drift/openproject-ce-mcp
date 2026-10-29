@@ -64,6 +64,10 @@ to install and discover.
 
 ### Changed
 
+- **Breaking:** `OPENPROJECT_READ_PROJECTS` and `OPENPROJECT_WRITE_PROJECTS` match a
+  project's identifier or numeric id only, no longer its name. A pattern that
+  cannot match an identifier, such as a name with spaces, stops the server at
+  start; use the identifier.
 - A rejected status change on `update_work_package` and
   `bulk_update_work_packages` now lists, in its `status` validation error, the
   status values OpenProject's update form offers for that work package,

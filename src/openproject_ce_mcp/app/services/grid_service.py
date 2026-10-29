@@ -7,7 +7,7 @@ always a numeric value already validated by tools_grids.py.
 A project scope is resolved through `ProjectLookupApi` only under a
 restrictive allowlist, once per distinct reference per call: OpenProject maps
 the identifier (or, from 17.3, a former identifier) to the project, and its
-id, identifier and name are the allowlist candidates. Not found or forbidden
+id and identifier are the allowlist candidates. Not found or forbidden
 denies the grid; every other failure propagates.
 
 Grids shares the "project" read/write scope with Projects/News/Documents/

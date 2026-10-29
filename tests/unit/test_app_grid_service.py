@@ -577,13 +577,15 @@ async def test_list_needs_no_project_lookup_when_wide_open() -> None:
 
 
 @pytest.mark.asyncio
-async def test_a_scope_project_is_matched_by_its_name_and_by_a_former_identifier() -> None:
+async def test_a_scope_project_is_matched_by_its_id_and_never_by_its_name() -> None:
     api = _FakeGridApi([_record(grid_id=1, scope="/projects/old-demo")])
     projects = _FakeProjectLookup([(6, "old-demo", "Demo Project")])
 
-    result = await _service(api, settings=_restricted(read=("Demo Project",)), projects=projects).list()
+    by_id = await _service(api, settings=_restricted(read=("6",)), projects=projects).list()
+    by_name = await _service(api, settings=_restricted(read=("demo-project",)), projects=projects).list()
 
-    assert [grid.id for grid in result.results] == [1]
+    assert [grid.id for grid in by_id.results] == [1]
+    assert by_name.results == []
 
 
 @pytest.mark.parametrize("error", [NotFoundError("gone"), PermissionDeniedError("hidden")])

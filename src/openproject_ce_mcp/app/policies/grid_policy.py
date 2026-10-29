@@ -149,7 +149,7 @@ def _ensure_grid_allowed(
         raise ProjectScopeDeniedError(_WRITE_DENIED if write else _READ_DENIED)
     if project_link is not None and project_id_from_href(project_link.get("href"), settings=settings) != resolved.id:
         raise ProjectScopeDeniedError(_WRITE_DENIED if write else _READ_DENIED)
-    candidates = project_record_candidates(resolved.id, resolved.identifier, resolved.name)
+    candidates = project_record_candidates(resolved.id, resolved.identifier)
     if not scope_allows_all(settings.read_projects) and not scope_matches_candidates(
         settings.read_projects, candidates
     ):

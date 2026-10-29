@@ -1,7 +1,7 @@
 """Which projects the configured allowlists cover, by numeric project id.
 
 A project link in a HAL response carries only an href and a title, so an
-identifier- or name-based allowlist can match a linked project only through
+identifier-based allowlist can match a linked project only through
 an id -> identifier map. The map has to know projects that came into being
 after the server started (a copy, the web UI, another client), not just the
 ones present at startup. The directory learns them from every JSON response
@@ -92,7 +92,7 @@ class ProjectDirectoryService:
 
     async def current_readable_project_ids(self) -> frozenset[int]:
         """The readable projects, each re-read from OpenProject unless its id
-        alone matches the read allowlist: a recorded identifier or name can
+        alone matches the read allowlist: a recorded identifier can
         predate a rename, and OpenProject counts and sums everything a
         work-package filter names."""
         await self.ensure_fresh()
@@ -129,8 +129,8 @@ class ProjectDirectoryService:
         self._ticks += 1
         return self._ticks
 
-    def record(self, project_id: int, identifier: str, name: str | None, *, archived: bool) -> None:
-        self._store(_Project(project_id, identifier, name, archived), as_of=self._tick())
+    def record(self, project_id: int, identifier: str, *, archived: bool) -> None:
+        self._store(_Project(project_id, identifier, archived), as_of=self._tick())
 
     def _store(self, project: _Project, *, as_of: int) -> None:
         if not self._active or self._as_of.get(project.id, 0) > as_of:
@@ -140,7 +140,7 @@ class ProjectDirectoryService:
 
     def _apply(self, project: _Project, *, now: float) -> None:
         project_id = project.id
-        readable, allowed = self._verdict(project_id, project.identifier, project.name)
+        readable, allowed = self._verdict(project_id, project.identifier)
         if allowed:
             self.positives[project_id] = project.identifier
             self._negatives.pop(project_id, None)
@@ -155,8 +155,8 @@ class ProjectDirectoryService:
             self._readable.discard(project_id)
             self._negatives[project_id] = now + FRESHNESS_SECONDS
 
-    def _verdict(self, project_id: int, identifier: str, name: str | None) -> tuple[bool, bool]:
-        candidates = project_record_candidates(project_id, identifier, name)
+    def _verdict(self, project_id: int, identifier: str) -> tuple[bool, bool]:
+        candidates = project_record_candidates(project_id, identifier)
         readable = self._read_restricted and scope_matches_candidates(self._settings.read_projects, candidates)
         writable = self._write_restricted and scope_matches_candidates(self._settings.write_projects, candidates)
         return readable, readable or writable
@@ -306,7 +306,7 @@ class ProjectDirectoryService:
             current = {project.id: project for project in await self._list_projects(ids=project_ids)}
         except OpenProjectError as exc:
             LOGGER.warning(
-                "Projects %s could not be read again for the allowlist; only their id and name match until a "
+                "Projects %s could not be read again for the allowlist; only their id matches until a "
                 "lookup succeeds: %s",
                 project_ids,
                 exc,
@@ -344,8 +344,7 @@ class ProjectDirectoryService:
             return
         except OpenProjectError as exc:
             LOGGER.warning(
-                "Project %s could not be looked up for the allowlist; only its id and name match until a lookup "
-                "succeeds: %s",
+                "Project %s could not be looked up for the allowlist; only its id matches until a lookup succeeds: %s",
                 project_id,
                 exc,
             )
@@ -384,8 +383,7 @@ class ProjectDirectoryService:
         self_link = links.get("self") if isinstance(links, dict) else None
         if not isinstance(self_link, dict) or self._project_id_from_href(self_link.get("href")) != project_id:
             return None
-        name = node.get("name")
-        return _Project(project_id, identifier, name if isinstance(name, str) else None, node.get("active") is False)
+        return _Project(project_id, identifier, node.get("active") is False)
 
     def _project_id_from_href(self, href: Any) -> int | None:
         # Learning runs on every response; a link under another root path is
@@ -402,14 +400,13 @@ class _Lookup(NamedTuple):
 class _Project(NamedTuple):
     id: int
     identifier: str
-    name: str | None
     archived: bool
 
 
 def _from_summary(summary: ProjectSummary) -> _Project | None:
     if not summary.identifier:
         return None
-    return _Project(summary.id, summary.identifier, summary.name, summary.active is False)
+    return _Project(summary.id, summary.identifier, summary.active is False)
 
 
 def _restricted(scope: tuple[str, ...]) -> bool:

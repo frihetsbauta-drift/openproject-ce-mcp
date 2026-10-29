@@ -52,8 +52,8 @@ class VersionResolver:
             project_ref = project
             if is_numeric_ref(project_ref):
                 # Must use resolve_project_ref, not a raw port call. The project
-                # fetch itself is unavoidable either way (the payload's id/identifier/
-                # name are what the allowlist check matches against) — the point is
+                # fetch itself is unavoidable either way (the payload's id/identifier
+                # are what the allowlist check matches against) — the point is
                 # that resolve_project_ref fetches AND checks together, so a denied
                 # project raises immediately and no FURTHER request (e.g. listing
                 # that project's versions) ever fires afterward.

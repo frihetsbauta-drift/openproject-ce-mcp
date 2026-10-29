@@ -14,25 +14,21 @@ from ..errors import ProjectScopeDeniedError
 from .scope import project_payload_candidates, project_record_candidates, scope_allows_all, scope_matches_candidates
 
 
-def _display_value(*, payload: dict[str, Any] | None, identifier: str | None, name: str | None) -> str | None:
+def _display_value(payload: dict[str, Any]) -> str | None:
     """A single, unambiguous display value for the `project_scope` log
-    field -- mirrors scope.py's `_project_scope_display`, but for this
-    module's payload/identifier-based signatures rather than a HAL link.
-    Prefers a known identifier over a numeric id or a bare name, since an
-    identifier is what an operator actually recognizes in an allowlist."""
-    if payload is not None:
-        identifier_value = payload.get("identifier")
-        if identifier_value:
-            return str(identifier_value)
-        project_id = payload.get("id")
-        if project_id is not None:
-            return str(project_id)
-    return identifier or name
+    field -- mirrors scope.py's `_project_scope_display`, but for a payload
+    rather than a HAL link. Prefers the identifier over the numeric id,
+    since an identifier is what an operator actually recognizes in an allowlist."""
+    identifier = payload.get("identifier")
+    if identifier:
+        return str(identifier)
+    project_id = payload.get("id")
+    return None if project_id is None else str(project_id)
 
 
 def ensure_project_read_allowed(payload: dict[str, Any], *, settings: Settings) -> None:
     """Read-allowlist check on an already-resolved project payload."""
-    policy_observation.record_project_scope(_display_value(payload=payload, identifier=None, name=None))
+    policy_observation.record_project_scope(_display_value(payload))
     if scope_allows_all(settings.read_projects):
         policy_observation.record_policy_decision("project_read_allowed")
         return
@@ -60,18 +56,17 @@ def ensure_project_write_allowed(payload: dict[str, Any], *, settings: Settings)
 
 def ensure_project_create_target_allowed(
     *,
-    identifier: str | None,
-    name: str | None,
+    identifier: str,
     settings: Settings,
 ) -> None:
     """Read- then write-allowlist check on an intended create/copy target.
 
     No resolved payload with an `id` exists yet at create time, so this checks
-    the intended identifier/name directly -- read is checked first, then
+    the intended identifier directly -- read is checked first, then
     write, since a writable target must also be readable.
     """
-    policy_observation.record_project_scope(_display_value(payload=None, identifier=identifier, name=name))
-    candidates = project_record_candidates(None, identifier, name)
+    policy_observation.record_project_scope(identifier)
+    candidates = project_record_candidates(None, identifier)
     if not scope_allows_all(settings.read_projects) and not scope_matches_candidates(
         settings.read_projects, candidates
     ):

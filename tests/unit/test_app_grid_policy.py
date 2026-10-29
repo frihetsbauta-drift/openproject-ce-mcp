@@ -111,8 +111,8 @@ def test_a_project_scope_needs_no_resolution_when_wide_open() -> None:
     )
 
 
-@pytest.mark.parametrize("allowlist", [("demo",), ("6",), ("Demo Project",), ("dem*",)])
-def test_a_resolved_project_is_matched_by_id_identifier_or_name(allowlist: tuple[str, ...]) -> None:
+@pytest.mark.parametrize("allowlist", [("demo",), ("6",), ("dem*",)])
+def test_a_resolved_project_is_matched_by_id_or_identifier(allowlist: tuple[str, ...]) -> None:
     ensure_grid_allowed(
         ProjectScope("old-demo"),
         project_link=None,
@@ -121,6 +121,19 @@ def test_a_resolved_project_is_matched_by_id_identifier_or_name(allowlist: tuple
         settings=_settings(read=allowlist, write=allowlist),
         project_id_to_identifier={},
     )
+
+
+@pytest.mark.parametrize("allowlist", [("Demo Project",), ("demo-project",), ("Demo*Project",)])
+def test_a_resolved_project_is_never_matched_by_its_name(allowlist: tuple[str, ...]) -> None:
+    with pytest.raises(ProjectScopeDeniedError, match="OPENPROJECT_READ_PROJECTS"):
+        ensure_grid_allowed(
+            ProjectScope("old-demo"),
+            project_link=None,
+            resolved=DEMO,
+            write=False,
+            settings=_settings(read=allowlist, write=allowlist),
+            project_id_to_identifier={},
+        )
 
 
 @pytest.mark.parametrize(

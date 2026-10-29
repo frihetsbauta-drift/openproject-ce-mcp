@@ -1359,7 +1359,7 @@ def _collect_credentials(
         print("  This token is saved in the config file — keep it private and never commit it.")
 
         print()
-        print("Project scope — comma-separated identifiers, names, or globs (e.g. team-*).")
+        print("Project scope — comma-separated project identifiers, numeric ids, or globs (e.g. team-*).")
         read_projects = _prompt(
             "Readable projects (empty = none, * = all visible)",
             existing.get("OPENPROJECT_READ_PROJECTS", ""),

@@ -427,7 +427,7 @@ async def test_a_failed_lookup_leaves_the_id_unknown_and_does_not_raise(error: E
 async def test_a_known_project_is_read_again_when_only_its_recorded_identifier_admits_a_link() -> None:
     api = _FakeProjectApi([(7, "renamed", "Some project")])
     directory = _directory(api)
-    directory.record(7, "demo-old", "Some project", archived=False)
+    directory.record(7, "demo-old", archived=False)
 
     await _learn(directory, _work_package_in(7))
 
@@ -439,8 +439,8 @@ async def test_a_known_project_is_read_again_when_only_its_recorded_identifier_a
 
 @pytest.mark.parametrize(
     ("read_projects", "write_projects"),
-    [(("Some*",), ()), (("7",), ()), (("Some*",), ("some-project",))],
-    ids=["name", "id", "name-for-both"],
+    [(("7",), ()), (("7",), ("7",))],
+    ids=["id", "id-for-both"],
 )
 @pytest.mark.asyncio
 async def test_a_known_project_is_not_read_again_when_the_link_matches_by_itself(
@@ -448,7 +448,7 @@ async def test_a_known_project_is_not_read_again_when_the_link_matches_by_itself
 ) -> None:
     api = _FakeProjectApi([(7, "renamed", "Some project")])
     directory = _directory(api, settings=_base_settings(read_projects=read_projects, write_projects=write_projects))
-    directory.record(7, "x7", "Some project", archived=False)
+    directory.record(7, "x7", archived=False)
 
     await _learn(directory, _work_package_in(7))
 
@@ -459,9 +459,9 @@ async def test_a_known_project_is_not_read_again_when_the_link_matches_by_itself
 @pytest.mark.asyncio
 async def test_a_known_project_is_read_again_when_its_identifier_alone_admits_a_write() -> None:
     api = _FakeProjectApi([(7, "renamed", "Some project")])
-    settings = _base_settings(read_projects=("Some*",), write_projects=("demo-old",))
+    settings = _base_settings(read_projects=("7",), write_projects=("demo-old",))
     directory = _directory(api, settings=settings)
-    directory.record(7, "demo-old", "Some project", archived=False)
+    directory.record(7, "demo-old", archived=False)
 
     await _learn(directory, _work_package_in(7))
 
@@ -473,7 +473,7 @@ async def test_a_known_project_is_read_again_when_its_identifier_alone_admits_a_
 async def test_a_project_shown_in_the_same_response_is_not_read_again() -> None:
     api = _FakeProjectApi()
     directory = _directory(api)
-    directory.record(7, "demo-old", "Some project", archived=False)
+    directory.record(7, "demo-old", archived=False)
     payload = _work_package_in(7)
     payload["_embedded"] = {"project": _representation(7, "demo-new", "Some project")}
 
@@ -546,7 +546,7 @@ class _HeldReads(_FakeProjectApi):
 async def test_a_response_relies_only_on_a_read_that_started_after_it_arrived() -> None:
     api = _HeldReads([(7, "demo-old", "Some project")])
     directory = _directory(api)
-    directory.record(7, "demo-old", "Some project", archived=False)
+    directory.record(7, "demo-old", archived=False)
     first = asyncio.create_task(_learn(directory, _work_package_in(7)))
     await api.arrived.get()
     api.projects[0] = (7, "renamed", "Some project")
@@ -580,7 +580,7 @@ async def test_a_read_that_ends_without_a_project_keeps_what_a_later_read_record
     api = _HeldReads([answered] if answered else [])
     api.list_error = error
     directory = _directory(api)
-    directory.record(7, "demo-old", "Some project", archived=False)
+    directory.record(7, "demo-old", archived=False)
     earlier = asyncio.create_task(_learn(directory, _work_package_in(7)))
     await api.arrived.get()
 
@@ -713,7 +713,7 @@ async def test_a_scan_does_not_undo_forgetting_a_project_whose_re_read_failed_wh
 async def test_a_lookup_answered_without_an_identifier_forgets_the_project() -> None:
     api = _FakeProjectApi([(7, "", "Some project")])
     directory = _directory(api)
-    directory.record(7, "demo-old", "Some project", archived=False)
+    directory.record(7, "demo-old", archived=False)
 
     await _learn(directory, _work_package_in(7))
 
@@ -870,8 +870,8 @@ async def test_a_scan_never_overwrites_what_was_recorded_after_it_started() -> N
     scan = asyncio.create_task(directory.refresh())
     while not api.list_calls:
         await asyncio.sleep(0)
-    directory.record(1, "moved-out", "Moved out", archived=False)
-    directory.record(2, "demo-moved-in", "Demo moved in", archived=False)
+    directory.record(1, "moved-out", archived=False)
+    directory.record(2, "demo-moved-in", archived=False)
     api.gate.set()
     await scan
 
@@ -880,21 +880,21 @@ async def test_a_scan_never_overwrites_what_was_recorded_after_it_started() -> N
 
 
 @pytest.mark.asyncio
-async def test_a_project_allowlisted_only_by_name_is_readable() -> None:
-    directory = _directory(_FakeProjectApi(), settings=_base_settings(read_projects=("Demo Project",)))
+async def test_a_project_allowlisted_only_by_name_is_not_readable() -> None:
+    directory = _directory(_FakeProjectApi(), settings=_base_settings(read_projects=("Demo Project", "demo-project")))
 
-    directory.record(5, "x5", "Demo Project", archived=False)
+    directory.record(5, "x5", archived=False)
 
-    assert directory.positives == {5: "x5"}
-    assert directory.readable_project_ids() == {5}
+    assert directory.positives == {}
+    assert directory.readable_project_ids() == frozenset()
 
 
 @pytest.mark.asyncio
 async def test_recording_a_project_that_moved_out_of_scope_drops_it() -> None:
     directory = _directory(_FakeProjectApi())
-    directory.record(1, "demo", "Demo", archived=False)
+    directory.record(1, "demo", archived=False)
 
-    directory.record(1, "other", "Other", archived=False)
+    directory.record(1, "other", archived=False)
 
     assert directory.positives == {}
     assert directory.readable_project_ids() == frozenset()
@@ -904,7 +904,7 @@ async def test_recording_a_project_that_moved_out_of_scope_drops_it() -> None:
 async def test_a_write_only_project_is_known_but_not_readable() -> None:
     directory = _directory(_FakeProjectApi(), settings=_base_settings(read_projects=("demo",), write_projects=("ops",)))
 
-    directory.record(3, "ops", "Ops", archived=False)
+    directory.record(3, "ops", archived=False)
 
     assert directory.positives == {3: "ops"}
     assert directory.readable_project_ids() == frozenset()
@@ -965,7 +965,7 @@ async def test_unrestricted_scopes_need_no_directory(read_projects: tuple, write
     await directory.refresh()
     await directory.ensure_fresh()
     await _learn(directory, _work_package_in(1))
-    directory.record(1, "demo", "Demo", archived=False)
+    directory.record(1, "demo", archived=False)
 
     assert api.list_calls == []
     assert api.get_calls == []
@@ -1009,7 +1009,7 @@ async def test_readable_descendants_are_judged_on_the_answer_not_on_an_earlier_n
 async def test_a_recorded_identifier_is_read_again_once_per_tool_call() -> None:
     api = _FakeProjectApi([(7, "demo-a", "Some project")])
     directory = _directory(api)
-    directory.record(7, "demo-a", "Some project", archived=False)
+    directory.record(7, "demo-a", archived=False)
 
     with tool_call():
         for _ in range(3):
@@ -1023,7 +1023,7 @@ async def test_a_recorded_identifier_is_read_again_once_per_tool_call() -> None:
 async def test_a_rename_is_noticed_by_the_next_tool_call() -> None:
     api = _FakeProjectApi([(7, "demo-a", "Some project")])
     directory = _directory(api)
-    directory.record(7, "demo-a", "Some project", archived=False)
+    directory.record(7, "demo-a", archived=False)
     with tool_call():
         await _learn(directory, _work_package_in(7))
     assert directory.positives == {7: "demo-a"}
@@ -1040,7 +1040,7 @@ async def test_a_rename_is_noticed_by_the_next_tool_call() -> None:
 async def test_outside_a_tool_call_every_response_reads_again() -> None:
     api = _FakeProjectApi([(7, "demo-a", "Some project")])
     directory = _directory(api)
-    directory.record(7, "demo-a", "Some project", archived=False)
+    directory.record(7, "demo-a", archived=False)
 
     for _ in range(3):
         await _learn(directory, _work_package_in(7))
@@ -1053,7 +1053,7 @@ async def test_a_response_linking_several_known_projects_reads_them_in_one_reque
     api = _FakeProjectApi([(7, "demo-a", "A"), (8, "demo-b", "B"), (9, "demo-c", "C")])
     directory = _directory(api)
     for project_id, identifier in ((7, "demo-a"), (8, "demo-b"), (9, "demo-c")):
-        directory.record(project_id, identifier, "Some project", archived=False)
+        directory.record(project_id, identifier, archived=False)
     payload = {
         "_type": "Collection",
         "_embedded": {"elements": [_work_package_in(7), _work_package_in(8), _work_package_in(9)]},

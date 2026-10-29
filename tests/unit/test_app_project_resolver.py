@@ -204,7 +204,7 @@ async def test_resolve_record_denies_a_renamed_project_written_by_its_former_ide
         await resolver.resolve_record("fidold", write=True)
 
 
-@pytest.mark.parametrize("pattern", ["fidnew", "42", "Fid New", "fid-new"])
+@pytest.mark.parametrize("pattern", ["fidnew", "42"])
 @pytest.mark.asyncio
 async def test_resolve_record_allows_a_renamed_project_by_its_former_identifier_when_its_current_fields_match(
     pattern: str,
@@ -216,6 +216,17 @@ async def test_resolve_record_allows_a_renamed_project_by_its_former_identifier_
     record = await resolver.resolve_record("fidold", write=True)
 
     assert record.payload["identifier"] == "fidnew"
+
+
+@pytest.mark.parametrize("pattern", ["Fid New", "fid-new"])
+@pytest.mark.asyncio
+async def test_resolve_record_never_matches_the_name_of_a_renamed_project(pattern: str) -> None:
+    resolver = _renamed_resolver(
+        dataclasses.replace(make_settings(), read_projects=(pattern,), write_projects=(pattern,))
+    )
+
+    with pytest.raises(PermissionDeniedError, match="OPENPROJECT_READ_PROJECTS"):
+        await resolver.resolve_record("fidold", write=True)
 
 
 @pytest.mark.asyncio

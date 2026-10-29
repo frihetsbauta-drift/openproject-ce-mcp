@@ -241,17 +241,12 @@ def scope_matches_candidates(scope: tuple[str, ...], candidates: set[str]) -> bo
     return False
 
 
-def project_record_candidates(project_id: int | None, identifier: str | None, name: str | None) -> set[str]:
-    """Candidates of a project known by id, identifier and name, as a scope pattern may name it."""
-    name_cf = (name or "").casefold()
+def project_record_candidates(project_id: int | None, identifier: str | None) -> set[str]:
+    """Candidates of a project known by id and identifier, as a scope pattern may name it. Never the
+    name: it is free text that a project admin edits and that is not unique."""
     return {
         candidate
-        for candidate in (
-            (identifier or "").casefold(),
-            "" if project_id is None else str(project_id),
-            name_cf,
-            name_cf.replace(" ", "-"),
-        )
+        for candidate in ((identifier or "").casefold(), "" if project_id is None else str(project_id))
         if candidate
     }
 
@@ -262,11 +257,7 @@ def project_payload_candidates(payload: Mapping[str, Any]) -> set[str]:
     Never the reference it was requested by: from 17.3 OpenProject resolves a
     former identifier to the renamed project, which no longer carries it.
     """
-    return project_record_candidates(
-        payload.get("id"),
-        _trim_text(payload.get("identifier"), limit=SUBJECT_LIMIT),
-        _trim_text(payload.get("name"), limit=SUBJECT_LIMIT),
-    )
+    return project_record_candidates(payload.get("id"), _trim_text(payload.get("identifier"), limit=SUBJECT_LIMIT))
 
 
 def project_link_candidates(link: Any, *, settings: Settings, project_id_to_identifier: Mapping[int, str]) -> set[str]:
@@ -274,7 +265,6 @@ def project_link_candidates(link: Any, *, settings: Settings, project_id_to_iden
         return set()
     candidates: set[str] = set()
     href = link.get("href")
-    title = link.get("title")
     if href:
         project_id = project_id_from_href(href, settings=settings)
         if project_id is not None:
@@ -282,35 +272,28 @@ def project_link_candidates(link: Any, *, settings: Settings, project_id_to_iden
             known_identifier = project_id_to_identifier.get(project_id)
             if known_identifier:
                 candidates.add(known_identifier.casefold())
-    if title:
-        title_cf = str(title).casefold()
-        candidates.add(title_cf)
-        # Also add an identifier-style variant (spaces → hyphens) so that a project
-        # named "My Project" matches the pattern "my-project" (its likely identifier).
-        candidates.add(title_cf.replace(" ", "-"))
     return candidates
 
 
 def project_named_by_link_allowed(
     link: Mapping[str, Any], *, settings: Settings, ids_by_identifier: Mapping[str, int]
 ) -> bool:
-    """Read-scope verdict for a link that names a project by identifier and name rather than by id
+    """Read-scope verdict for a link that names a project by identifier rather than by id
     (the time entry activities' project links do). The id comes from the directory, so a scope
     pattern that is an id matches too."""
     href = link.get("href")
     identifier = unquote(href.rstrip("/").rsplit("/", maxsplit=1)[-1]) if isinstance(href, str) else None
-    title = link.get("title")
     project_id = ids_by_identifier.get(identifier) if identifier is not None else None
-    candidates = project_record_candidates(project_id, identifier, title if isinstance(title, str) else None)
+    candidates = project_record_candidates(project_id, identifier)
     return scope_matches_candidates(settings.read_projects, candidates)
 
 
 def project_known_by_id_allowed(
-    project_id: int, name: str | None, *, settings: Settings, project_id_to_identifier: Mapping[int, str]
+    project_id: int, *, settings: Settings, project_id_to_identifier: Mapping[int, str]
 ) -> bool:
-    """Read-scope verdict for a project that a result names only by id and name. An identifier
+    """Read-scope verdict for a project that a result names only by id. An identifier
     pattern covers it only when the directory already knows the identifier: fail closed."""
-    candidates = project_record_candidates(project_id, project_id_to_identifier.get(project_id), name)
+    candidates = project_record_candidates(project_id, project_id_to_identifier.get(project_id))
     return scope_matches_candidates(settings.read_projects, candidates)
 
 

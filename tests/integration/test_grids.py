@@ -225,7 +225,7 @@ async def test_list_grids_paginates_beyond_a_single_page(client: OpenProjectClie
 
 async def test_a_projects_boards_page_grid_is_matched_by_its_project(start_scoped_client) -> None:
     """A boards page grid's scope is /projects/<identifier>/boards; a restrictive
-    allowlist naming that project, by identifier or by name, must reach it."""
+    allowlist naming that project, by identifier or by id, must reach it and one naming it by name must not."""
     unrestricted = await start_scoped_client(read_projects=("*",), write_projects=("*",))
     grids = await unrestricted.grid.list(limit=100)
     boards_grids = [grid for grid in grids.results if grid.scope and grid.scope.endswith("/boards")]
@@ -235,11 +235,12 @@ async def test_a_projects_boards_page_grid_is_matched_by_its_project(start_scope
     identifier = target.scope.split("/")[-2]
     project = await unrestricted.project.get(identifier)
 
-    for allowlist in ((identifier,), (project.name,)):
+    for allowlist in ((identifier,), (str(project.id),)):
         scoped = await start_scoped_client(read_projects=allowlist, write_projects=allowlist)
         assert (await scoped.grid.get(target.id)).id == target.id
         assert target.id in [grid.id for grid in (await scoped.grid.list(limit=100)).results]
 
-    elsewhere = await start_scoped_client(read_projects=("no-such-project",), write_projects=("no-such-project",))
-    with pytest.raises(PermissionDeniedError):
-        await elsewhere.grid.get(target.id)
+    for allowlist in (("no-such-project",), (project.name.replace(" ", "-"),)):
+        elsewhere = await start_scoped_client(read_projects=allowlist, write_projects=allowlist)
+        with pytest.raises(PermissionDeniedError):
+            await elsewhere.grid.get(target.id)
