@@ -186,7 +186,9 @@ docker/test/up.sh 178
 
 then point the script at it as described in the script's own docstring
 (`OPENPROJECT_BASE_URL`, `OPENPROJECT_API_TOKEN`, `OPENPROJECT_TEST_PROJECT`
-pointed at the seeded test instance).
+pointed at the seeded test instance; the script writes work packages and refuses
+to start without them, and a target that is not loopback also needs
+`OPENPROJECT_TEST_DESTRUCTIVE_TARGET`).
 
 ## See also
 

@@ -18,11 +18,14 @@ in README.md's "How it works" section). Three parts:
 
     OPENPROJECT_BASE_URL=http://localhost:8178 \\
     OPENPROJECT_API_TOKEN=... \\
-    OPENPROJECT_TEST_PROJECT=TST \\
+    OPENPROJECT_TEST_PROJECT=tst \\
     python tools/measure-context.py
 
-   If those env vars are unset, parts 2 and 3 are skipped with a message —
-   part 1 still runs, since it needs no live data.
+   If the base URL and the token are both unset, parts 2 and 3 are skipped with
+   a message — part 1 still runs, since it needs no live data. If either is set,
+   the run needs the test project too (no default) and, for a target that is not
+   loopback, ``OPENPROJECT_TEST_DESTRUCTIVE_TARGET`` set to the same URL
+   (``tools/live_target_guard.py``); otherwise it exits before the first request.
 
    Part 2 creates three representative work packages in the target project
    (realistic subjects/descriptions, not empty seed data) for the list/read/
@@ -64,7 +67,11 @@ from uuid import uuid4
 import httpx
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+# The guard sits next to this script; a test that loads this file by path has no script directory on sys.path.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+
+import live_target_guard  # noqa: E402
 
 from openproject_ce_mcp.client import OpenProjectClient  # noqa: E402
 from openproject_ce_mcp.config import TOOL_GROUPS, Settings  # noqa: E402
@@ -246,19 +253,17 @@ def _raw_api(settings: Settings) -> httpx.AsyncClient:
 
 
 async def measure_response_sizes() -> list | None:
-    base_url = os.environ.get("OPENPROJECT_BASE_URL")
-    token = os.environ.get("OPENPROJECT_API_TOKEN")
-    project = os.environ.get("OPENPROJECT_TEST_PROJECT", "TST")
-
     print("=== Response sizes (raw API vs. MCP) ===\n")
-    if not base_url or not token:
-        print(
-            "Skipped: set OPENPROJECT_BASE_URL / OPENPROJECT_API_TOKEN "
-            "(docker/test/up.sh 178, never production) to run this part.\n"
-        )
+    if not os.environ.get("OPENPROJECT_BASE_URL") and not os.environ.get("OPENPROJECT_API_TOKEN"):
+        print("Skipped: set the variables docker/test/up.sh 178 prints (never production) to run this part.\n")
         return None
+    try:
+        target = live_target_guard.require_destructive_target(os.environ)
+    except live_target_guard.LiveTargetRefused as refusal:
+        sys.exit(f"Refusing to write measurement work packages: {refusal}")
+    project = target.project
 
-    settings = _measurement_settings(base_url, token, project)
+    settings = _measurement_settings(target.base_url, os.environ["OPENPROJECT_API_TOKEN"], project)
     client = OpenProjectClient(settings)
     await client.initialize()
 

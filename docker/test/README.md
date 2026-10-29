@@ -166,6 +166,7 @@ project-prefixed reference to `NotFoundError`.
 
 Run the full suite against a running instance with the env block `up.sh` prints,
 e.g. `OPENPROJECT_BASE_URL=http://localhost:8175 OPENPROJECT_API_TOKEN=… OPENPROJECT_TEST_PROJECT=tst uv run pytest -m integration`.
+Without the base URL, token and test project the run stops before the first request (`tools/live_target_guard.py`).
 
 ## Note: semantic identifiers require an UPPERCASE project identifier
 

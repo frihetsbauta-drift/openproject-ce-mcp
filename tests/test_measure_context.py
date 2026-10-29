@@ -92,3 +92,31 @@ async def test_raw_baseline_waits_as_long_as_the_operator_configured(monkeypatch
 
     async with measure_context._raw_api(settings) as http:
         assert (settings.timeout, http.timeout) == (37.0, httpx.Timeout(37.0))
+
+
+@pytest.mark.parametrize("project", ["OPM", "tst"], ids=["production-like project", "remote target not acknowledged"])
+def test_live_part_refuses_before_any_request_when_the_target_was_not_named(monkeypatch, project):
+    monkeypatch.setenv("OPENPROJECT_BASE_URL", "https://op.example.com")
+    monkeypatch.setenv("OPENPROJECT_API_TOKEN", "token")
+    monkeypatch.setenv("OPENPROJECT_TEST_PROJECT", project)
+    monkeypatch.delenv("OPENPROJECT_TEST_DESTRUCTIVE_TARGET", raising=False)
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("a refused run must not build a client")
+
+    monkeypatch.setattr(measure_context, "OpenProjectClient", forbidden)
+    monkeypatch.setattr(measure_context, "_raw_api", forbidden)
+
+    with pytest.raises(SystemExit) as refusal:
+        asyncio.run(measure_context.measure_response_sizes())
+
+    assert "Refusing to write measurement work packages" in str(refusal.value)
+    assert "token" not in str(refusal.value)
+
+
+def test_live_part_is_skipped_without_a_live_target(monkeypatch, capsys):
+    monkeypatch.delenv("OPENPROJECT_BASE_URL", raising=False)
+    monkeypatch.delenv("OPENPROJECT_API_TOKEN", raising=False)
+
+    assert asyncio.run(measure_context.measure_response_sizes()) is None
+    assert "Skipped" in capsys.readouterr().out

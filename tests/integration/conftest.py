@@ -14,7 +14,13 @@ collected with ``-m integration``. When creds are absent every fixture skips.
 Required environment variables:
     OPENPROJECT_BASE_URL       e.g. https://op.example.com
     OPENPROJECT_API_TOKEN      API token with admin access
-    OPENPROJECT_TEST_PROJECT   DISPOSABLE project identifier to use (default: mcp-test)
+    OPENPROJECT_TEST_PROJECT   DISPOSABLE project identifier to use, no default
+    OPENPROJECT_TEST_DESTRUCTIVE_TARGET
+                               a non-loopback target only: the base URL again, as the acknowledgement that this
+                               instance may be written to
+
+A run that sets some of these but not all of them, or names a project that does not look disposable, stops before
+the first test (``tools/live_target_guard.py``). ``docker/test/up.sh`` prints the set for a local instance.
 """
 
 from __future__ import annotations
@@ -24,14 +30,20 @@ import dataclasses
 import json
 import os
 import subprocess
+import sys
 import uuid
 from collections.abc import Callable
+from pathlib import Path
 
 import httpx
 import pytest
 
 from openproject_ce_mcp.client import NotFoundError, OpenProjectClient
 from openproject_ce_mcp.config import Settings
+
+# tools/ is not a package; the benchmark script loads the same guard the same way.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools"))
+import live_target_guard  # noqa: E402
 
 # Directory containing docker/test/compose.yml -- `docker compose exec` needs
 # to run with this as its cwd (or -f pointed at it) to resolve the service name.
@@ -119,23 +131,18 @@ def _run_rails_script(
     return line.removeprefix(prefix)
 
 
-# Project identifiers that must never be used as the disposable test project.
-# These name real, non-throwaway projects; running the write suite against them
-# would create and delete production data. Override the guard deliberately by
-# setting OPENPROJECT_TEST_PROJECT to a throwaway project (default: mcp-test).
-_PROTECTED_TEST_PROJECTS = frozenset({"openproject-ce-mcp"})
+@pytest.fixture(scope="session", autouse=True)
+def _destructive_target_guard() -> None:
+    """Stops the whole session before any test writes to a target nobody named on purpose.
 
-
-def _resolve_test_project() -> str:
-    """Return the disposable test project, refusing known non-throwaway ones."""
-    project = os.environ.get("OPENPROJECT_TEST_PROJECT", "mcp-test").strip()
-    if project.lower() in _PROTECTED_TEST_PROJECTS:
-        pytest.fail(
-            f"Refusing to run write integration tests against protected project "
-            f"'{project}'. Set OPENPROJECT_TEST_PROJECT to a disposable/throwaway "
-            f"project (default: mcp-test)."
-        )
-    return project
+    Without a base URL and a token there is no live target, and every fixture skips.
+    """
+    if not os.environ.get("OPENPROJECT_BASE_URL") and not os.environ.get("OPENPROJECT_API_TOKEN"):
+        return
+    try:
+        live_target_guard.require_destructive_target(os.environ)
+    except live_target_guard.LiveTargetRefused as refusal:
+        pytest.exit(f"Refusing to run the destructive integration suite: {refusal}", returncode=2)
 
 
 async def skip_if_unsupported(probe_call):
@@ -187,7 +194,7 @@ def disposable_project_identifier() -> str:
     uppercase letter as semantic. This mirrors the same signal
     seed_wiki_page_id (below) already relies on.
     """
-    test_project = os.environ.get("OPENPROJECT_TEST_PROJECT", "mcp-test").strip()
+    test_project = os.environ["OPENPROJECT_TEST_PROJECT"].strip()
     suffix = uuid.uuid4().hex[:8]
     if test_project != test_project.lower():
         return f"IT{suffix.upper()}"
@@ -197,9 +204,9 @@ def disposable_project_identifier() -> str:
 def _integration_settings() -> Settings | None:
     base_url = os.environ.get("OPENPROJECT_BASE_URL")
     api_token = os.environ.get("OPENPROJECT_API_TOKEN")
-    test_project = os.environ.get("OPENPROJECT_TEST_PROJECT", "mcp-test").strip()
     if not base_url or not api_token:
         return None
+    test_project = os.environ["OPENPROJECT_TEST_PROJECT"].strip()
     return Settings(
         base_url=base_url,
         api_token=api_token,
@@ -231,8 +238,6 @@ async def client():
     settings = _integration_settings()
     if settings is None:
         pytest.skip("OPENPROJECT_BASE_URL / OPENPROJECT_API_TOKEN not set")
-    # Fail fast before handing out a write-enabled client aimed at a protected project.
-    _resolve_test_project()
     client_instance = OpenProjectClient(settings)
     await client_instance.initialize()
     return client_instance
@@ -262,7 +267,10 @@ async def start_scoped_client():
 
 @pytest.fixture
 def test_project() -> str:
-    return _resolve_test_project()
+    project = os.environ.get("OPENPROJECT_TEST_PROJECT", "").strip()
+    if not project:
+        pytest.skip("OPENPROJECT_TEST_PROJECT not set")
+    return project
 
 
 @pytest.fixture
@@ -292,7 +300,6 @@ async def denied_client():
     settings = _integration_settings()
     if settings is None:
         pytest.skip("OPENPROJECT_BASE_URL / OPENPROJECT_API_TOKEN not set")
-    _resolve_test_project()
     denied_settings = dataclasses.replace(
         settings,
         write_projects=("no-such-project-for-integration-tests",),
@@ -319,7 +326,6 @@ async def admin_write_disabled_client():
     settings = _integration_settings()
     if settings is None:
         pytest.skip("OPENPROJECT_BASE_URL / OPENPROJECT_API_TOKEN not set")
-    _resolve_test_project()
     disabled_settings = dataclasses.replace(settings, enable_admin_write=False)
     client_instance = OpenProjectClient(disabled_settings)
     await client_instance.initialize()
@@ -335,7 +341,6 @@ async def hide_custom_fields_client():
     settings = _integration_settings()
     if settings is None:
         pytest.skip("OPENPROJECT_BASE_URL / OPENPROJECT_API_TOKEN not set")
-    _resolve_test_project()
     hidden_settings = dataclasses.replace(settings, hide_custom_fields=("cf_*",))
     client_instance = OpenProjectClient(hidden_settings)
     await client_instance.initialize()
@@ -359,7 +364,6 @@ async def restricted_client():
     settings = _integration_settings()
     if settings is None:
         pytest.skip("OPENPROJECT_BASE_URL / OPENPROJECT_API_TOKEN not set")
-    _resolve_test_project()
     restricted_settings = dataclasses.replace(settings, api_token=restricted_token)
     client_instance = OpenProjectClient(restricted_settings)
     await client_instance.initialize()
