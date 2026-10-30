@@ -297,6 +297,7 @@ def _phase_record(*, project_link: dict | None) -> ProjectPhaseRecord:
             project="Demo",
             phase_definition_id=None,
             phase_definition=None,
+            active=True,
             start_date=None,
             finish_date=None,
             created_at=None,

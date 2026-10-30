@@ -224,7 +224,7 @@ def normalize_project_phase_definition(payload: dict[str, Any]) -> ProjectPhaseD
 def normalize_project_phase(payload: dict[str, Any]) -> ProjectPhase:
     phase_id = int(payload["id"])
     links = payload.get("_links", {})
-    phase_definition_link = links.get("projectPhaseDefinition")
+    phase_definition_link = links.get("definition")
     return ProjectPhase(
         id=phase_id,
         name=(
@@ -238,6 +238,7 @@ def normalize_project_phase(payload: dict[str, Any]) -> ProjectPhase:
         if isinstance(phase_definition_link, dict)
         else None,
         phase_definition=_link_title(phase_definition_link),
+        active=bool(payload.get("active")),
         start_date=payload.get("startDate"),
         finish_date=payload.get("finishDate"),
         created_at=payload.get("createdAt"),
