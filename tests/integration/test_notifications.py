@@ -57,14 +57,13 @@ async def test_list_notifications_unread_only(client: OpenProjectClient) -> None
     assert all(n.read is False for n in result.results)
 
 
-async def test_list_notifications_scoped_by_read_allowlist(client: OpenProjectClient) -> None:
+async def test_list_notifications_scoped_by_read_allowlist(client: OpenProjectClient, open_client) -> None:
     """_notification_payload_allowed gates each notification by its project
     (or, absent a project link, its resolved work package) -- under a
     read-allowlist that permits nothing, the list must come back empty
     rather than raising."""
     denied_settings = dataclasses.replace(client.settings, read_projects=())
-    denied_client = OpenProjectClient(denied_settings)
-    await denied_client.initialize()
+    denied_client = await open_client(denied_settings)
 
     result = await denied_client.notification.list_all()
     assert result.count == 0
@@ -89,10 +88,11 @@ async def test_mark_all_notifications_read_preview_does_not_write(client: OpenPr
     assert preview.state == "preview"
 
 
-async def test_mark_notification_read_denied_when_personal_write_disabled(client: OpenProjectClient) -> None:
+async def test_mark_notification_read_denied_when_personal_write_disabled(
+    client: OpenProjectClient, open_client
+) -> None:
     disabled_settings = dataclasses.replace(client.settings, enable_personal_write=False)
-    disabled_client = OpenProjectClient(disabled_settings)
-    await disabled_client.initialize()
+    disabled_client = await open_client(disabled_settings)
 
     with pytest.raises(PermissionDeniedError):
         await disabled_client.notification.mark_read(999999999, confirm=True)
@@ -327,6 +327,7 @@ async def test_mark_notifications_read_leaves_notifications_outside_the_read_all
     project_refs: list[str],
     second_user_client: tuple[int, OpenProjectClient],
     start_scoped_client,
+    open_client,
 ) -> None:
     """`client` reads only test_project. A notification about a disposable
     project outside it must stay unread through both write paths, while the
@@ -340,16 +341,12 @@ async def test_mark_notifications_read_leaves_notifications_outside_the_read_all
     await _admit_second_user(client, test_project, second_user_client)
     await _admit_second_user(unrestricted, outside, second_user_client)
     _, second_client = second_user_client
-    second_unrestricted = OpenProjectClient(
+    second_unrestricted = await open_client(
         dataclasses.replace(second_client.settings, read_projects=("*",), write_projects=("*",))
     )
-    try:
-        await second_unrestricted.initialize()
-        inside_id = await _notification_from_second_user(client, second_client, test_project, wp_ids)
-        # The outside work package goes away with its project.
-        outside_id = await _notification_from_second_user(unrestricted, second_unrestricted, outside, [])
-    finally:
-        await second_unrestricted.aclose()
+    inside_id = await _notification_from_second_user(client, second_client, test_project, wp_ids)
+    # The outside work package goes away with its project.
+    outside_id = await _notification_from_second_user(unrestricted, second_unrestricted, outside, [])
 
     async with httpx.AsyncClient(
         base_url=f"{client.settings.api_base_url}/",

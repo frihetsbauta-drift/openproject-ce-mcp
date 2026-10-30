@@ -57,7 +57,7 @@ async def test_execute_query_returns_resolved_work_packages(
 
 
 async def test_execute_query_filters_results_against_read_allowlist(
-    client: OpenProjectClient, test_project: str, wp_ids: list[int], board_ids: list[int]
+    client: OpenProjectClient, test_project: str, wp_ids: list[int], board_ids: list[int], open_client
 ) -> None:
     """A query executes with the API token's full server-side permissions --
     this MCP must still filter the resolved work packages against its own
@@ -81,8 +81,7 @@ async def test_execute_query_filters_results_against_read_allowlist(
     board_ids.append(board_result.board_id)
 
     restricted_settings = dataclasses.replace(client.settings, read_projects=("no-such-project",))
-    restricted_client = OpenProjectClient(restricted_settings)
-    await restricted_client.initialize()
+    restricted_client = await open_client(restricted_settings)
 
     result = await restricted_client.query_execution.execute(board_result.board_id)
     assert not any(wp.id == wp_result.work_package_id for wp in result.results)

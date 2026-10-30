@@ -104,7 +104,7 @@ async def test_board_sort_by_forms_apply(client: OpenProjectClient, test_project
 
 
 async def test_update_board_denies_reparent_into_write_restricted_project(
-    client: OpenProjectClient, test_project: str, project_refs: list[str]
+    client: OpenProjectClient, test_project: str, project_refs: list[str], open_client
 ) -> None:
     """Regression: update_board's own current-project check only proved the
     BOARD's existing project was write-allowed -- the reparent target (a
@@ -116,8 +116,7 @@ async def test_update_board_denies_reparent_into_write_restricted_project(
         read_projects=("*",),
         write_projects=("*",),
     )
-    unrestricted_client = OpenProjectClient(unrestricted_settings)
-    await unrestricted_client.initialize()
+    unrestricted_client = await open_client(unrestricted_settings)
 
     target_identifier = disposable_project_identifier()
     create_project_result = await unrestricted_client.create_project(

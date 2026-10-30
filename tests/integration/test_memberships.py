@@ -68,7 +68,7 @@ async def test_list_groups(client: OpenProjectClient) -> None:
 
 
 async def test_create_and_update_membership_in_fresh_project(
-    client: OpenProjectClient, project_refs: list[str]
+    client: OpenProjectClient, project_refs: list[str], open_client
 ) -> None:
     """create_membership resolves a role-name list to hrefs via
     _resolve_role_hrefs and a principal ref via _resolve_principal_id, then
@@ -79,8 +79,7 @@ async def test_create_and_update_membership_in_fresh_project(
     principal (not "me", since the token owner here is typically the
     instance admin) -- see _other_principal_id's docstring."""
     unrestricted_settings = dataclasses.replace(client.settings, read_projects=("*",), write_projects=("*",))
-    unrestricted_client = OpenProjectClient(unrestricted_settings)
-    await unrestricted_client.initialize()
+    unrestricted_client = await open_client(unrestricted_settings)
 
     new_identifier = disposable_project_identifier()
     create_project_result = await unrestricted_client.create_project(
@@ -122,13 +121,14 @@ async def test_create_and_update_membership_in_fresh_project(
     assert other_role_name in updated.result.role_names
 
 
-async def test_delete_membership_in_fresh_project(client: OpenProjectClient, project_refs: list[str]) -> None:
+async def test_delete_membership_in_fresh_project(
+    client: OpenProjectClient, project_refs: list[str], open_client
+) -> None:
     """delete_membership DELETEs memberships/{id}. Uses a freshly created,
     disposable project so this never touches an existing membership, and a
     second principal (not "me") -- see _other_principal_id's docstring."""
     unrestricted_settings = dataclasses.replace(client.settings, read_projects=("*",), write_projects=("*",))
-    unrestricted_client = OpenProjectClient(unrestricted_settings)
-    await unrestricted_client.initialize()
+    unrestricted_client = await open_client(unrestricted_settings)
 
     new_identifier = disposable_project_identifier()
     create_project_result = await unrestricted_client.create_project(
@@ -159,14 +159,13 @@ async def test_delete_membership_in_fresh_project(client: OpenProjectClient, pro
 
 
 async def test_update_membership_denied_outside_write_allowlist(
-    denied_client: OpenProjectClient, client: OpenProjectClient, project_refs: list[str]
+    denied_client: OpenProjectClient, client: OpenProjectClient, project_refs: list[str], open_client
 ) -> None:
     """update_membership resolves the membership's project link and
     authorizes the write against it -- a caller without write access to that
     project must be denied."""
     unrestricted_settings = dataclasses.replace(client.settings, read_projects=("*",), write_projects=("*",))
-    unrestricted_client = OpenProjectClient(unrestricted_settings)
-    await unrestricted_client.initialize()
+    unrestricted_client = await open_client(unrestricted_settings)
 
     other_identifier = disposable_project_identifier()
     create_project_result = await unrestricted_client.create_project(
@@ -193,7 +192,7 @@ async def test_update_membership_denied_outside_write_allowlist(
 
 
 async def test_list_project_memberships_paginates_beyond_a_single_page(
-    client: OpenProjectClient, project_refs: list[str]
+    client: OpenProjectClient, project_refs: list[str], open_client
 ) -> None:
     """Regression: list_project_memberships never sent offset/pageSize to
     OpenProject at all, so a limit smaller than the total available
@@ -207,8 +206,7 @@ async def test_list_project_memberships_paginates_beyond_a_single_page(
     zero memberships until one is explicitly created), so this cannot rely
     on an implicit creator membership to reach 2."""
     unrestricted_settings = dataclasses.replace(client.settings, read_projects=("*",), write_projects=("*",))
-    unrestricted_client = OpenProjectClient(unrestricted_settings)
-    await unrestricted_client.initialize()
+    unrestricted_client = await open_client(unrestricted_settings)
 
     new_identifier = disposable_project_identifier()
     create_project_result = await unrestricted_client.create_project(

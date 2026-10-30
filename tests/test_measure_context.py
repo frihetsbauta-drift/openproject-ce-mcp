@@ -120,3 +120,199 @@ def test_live_part_is_skipped_without_a_live_target(monkeypatch, capsys):
 
     assert asyncio.run(measure_context.measure_response_sizes()) is None
     assert "Skipped" in capsys.readouterr().out
+
+
+# ── Cleanup of the work packages the live part creates ──────────────────────
+
+
+def _settings_for(base_url: str = "http://localhost:8178"):
+    return measure_context._measurement_settings(base_url, "token", "tst")
+
+
+class _FakeClient:
+    instances: list = []
+
+    def __init__(self, settings, fail_initialize: bool = False):
+        self.closed = False
+        self.initialized = False
+        self.fail_initialize = fail_initialize
+        _FakeClient.instances.append(self)
+
+    async def initialize(self):
+        if self.fail_initialize:
+            raise RuntimeError("initialize failed")
+        self.initialized = True
+
+    async def aclose(self):
+        self.closed = True
+
+
+def _raw_api_answering(monkeypatch, status_by_id: dict[int, int], seen: list[int]):
+    def handler(request: httpx.Request) -> httpx.Response:
+        work_package_id = int(request.url.path.rsplit("/", 1)[1])
+        assert request.method == "DELETE"
+        seen.append(work_package_id)
+        return httpx.Response(status_by_id.get(work_package_id, 204), request=request)
+
+    def factory(settings):
+        return httpx.AsyncClient(base_url=settings.base_url, transport=httpx.MockTransport(handler))
+
+    monkeypatch.setattr(measure_context, "_raw_api", factory)
+
+
+@pytest.fixture
+def fake_client(monkeypatch):
+    _FakeClient.instances = []
+    monkeypatch.setattr(measure_context, "OpenProjectClient", _FakeClient)
+    return _FakeClient
+
+
+def test_a_finished_measurement_deletes_every_recorded_work_package_and_closes_the_client(monkeypatch, fake_client):
+    seen: list[int] = []
+    _raw_api_answering(monkeypatch, {}, seen)
+
+    async def run():
+        async with measure_context._measurement_workspace(_settings_for(), keep=False) as (client, created):
+            assert client.initialized
+            created.extend([11, 12, 13])
+
+    asyncio.run(run())
+
+    assert seen == [11, 12, 13]
+    assert [c.closed for c in fake_client.instances] == [True]
+
+
+def test_a_work_package_that_is_already_gone_is_not_a_failure(monkeypatch, fake_client):
+    seen: list[int] = []
+    _raw_api_answering(monkeypatch, {12: 404}, seen)
+
+    async def run():
+        async with measure_context._measurement_workspace(_settings_for(), keep=False) as (_, created):
+            created.extend([11, 12, 13])
+
+    asyncio.run(run())
+
+    assert seen == [11, 12, 13]
+
+
+def test_a_failed_deletion_does_not_stop_the_others_and_ends_the_run_with_the_id(monkeypatch, fake_client):
+    seen: list[int] = []
+    _raw_api_answering(monkeypatch, {12: 500, 14: 403}, seen)
+
+    async def run():
+        async with measure_context._measurement_workspace(_settings_for(), keep=False) as (_, created):
+            created.extend([11, 12, 13, 14])
+
+    with pytest.raises(SystemExit) as ended:
+        asyncio.run(run())
+
+    assert seen == [11, 12, 13, 14]
+    assert "work package 12" in str(ended.value) and "work package 14" in str(ended.value)
+    assert "work package 11" not in str(ended.value) and "work package 13" not in str(ended.value)
+    assert [c.closed for c in fake_client.instances] == [True]
+
+
+@pytest.mark.parametrize("error", [RuntimeError("boom"), KeyboardInterrupt(), asyncio.CancelledError()])
+def test_an_error_or_interrupt_in_the_body_still_deletes_and_closes(monkeypatch, fake_client, error):
+    seen: list[int] = []
+    _raw_api_answering(monkeypatch, {}, seen)
+
+    async def run():
+        async with measure_context._measurement_workspace(_settings_for(), keep=False) as (_, created):
+            created.extend([21, 22])
+            raise error
+
+    with pytest.raises(type(error)):
+        asyncio.run(run())
+
+    assert seen == [21, 22]
+    assert [c.closed for c in fake_client.instances] == [True]
+
+
+def test_a_cleanup_failure_after_an_error_is_reported_without_hiding_the_error(monkeypatch, fake_client, capsys):
+    seen: list[int] = []
+    _raw_api_answering(monkeypatch, {22: 500}, seen)
+
+    async def run():
+        async with measure_context._measurement_workspace(_settings_for(), keep=False) as (_, created):
+            created.extend([21, 22])
+            raise RuntimeError("the measurement broke")
+
+    with pytest.raises(RuntimeError, match="the measurement broke"):
+        asyncio.run(run())
+
+    assert "Cleanup failed: work package 22" in capsys.readouterr().err
+    assert [c.closed for c in fake_client.instances] == [True]
+
+
+def test_a_client_that_cannot_initialize_is_still_closed(monkeypatch):
+    clients = []
+
+    def factory(settings):
+        client = _FakeClient(settings, fail_initialize=True)
+        clients.append(client)
+        return client
+
+    monkeypatch.setattr(measure_context, "OpenProjectClient", factory)
+    _raw_api_answering(monkeypatch, {}, [])
+
+    async def run():
+        async with measure_context._measurement_workspace(_settings_for(), keep=False):
+            raise AssertionError("the body must not run")
+
+    with pytest.raises(RuntimeError, match="initialize failed"):
+        asyncio.run(run())
+
+    assert [c.closed for c in clients] == [True]
+
+
+def test_keep_leaves_the_work_packages_and_still_closes_the_client(monkeypatch, fake_client):
+    seen: list[int] = []
+    _raw_api_answering(monkeypatch, {}, seen)
+
+    async def run():
+        async with measure_context._measurement_workspace(_settings_for(), keep=True) as (_, created):
+            created.extend([31, 32])
+
+    asyncio.run(run())
+
+    assert seen == []
+    assert [c.closed for c in fake_client.instances] == [True]
+
+
+def test_keep_is_a_parsed_option_of_the_script(monkeypatch):
+    received = {}
+
+    async def fake_measure(*, keep=False):
+        received["keep"] = keep
+
+    monkeypatch.setattr(measure_context, "measure_tools_list", lambda: asyncio.sleep(0))
+    monkeypatch.setattr(measure_context, "measure_response_sizes", fake_measure)
+    monkeypatch.setattr(sys, "argv", ["measure-context.py", "--keep"])
+    asyncio.run(measure_context.main())
+    assert received == {"keep": True}
+
+    monkeypatch.setattr(sys, "argv", ["measure-context.py"])
+    asyncio.run(measure_context.main())
+    assert received == {"keep": False}
+
+
+def test_a_failing_close_after_an_error_does_not_replace_the_error(monkeypatch, capsys):
+    class _BrokenClose(_FakeClient):
+        async def aclose(self):
+            raise RuntimeError("close failed")
+
+    monkeypatch.setattr(measure_context, "OpenProjectClient", _BrokenClose)
+    seen: list[int] = []
+    _raw_api_answering(monkeypatch, {}, seen)
+
+    async def run():
+        async with measure_context._measurement_workspace(_settings_for(), keep=False) as (_, created):
+            created.append(41)
+            raise RuntimeError("the measurement broke")
+
+    with pytest.raises(RuntimeError, match="the measurement broke"):
+        asyncio.run(run())
+
+    assert seen == [41]
+    assert "cleanup itself failed: RuntimeError: close failed" in capsys.readouterr().err

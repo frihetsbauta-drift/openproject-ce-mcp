@@ -317,7 +317,7 @@ async def test_get_work_package_ancestors_tolerate_missing_display_id(
 
 
 async def test_create_and_update_work_package_deny_reparent_into_write_restricted_parent(
-    client: OpenProjectClient, test_project: str, wp_ids: list[int], project_refs: list[str]
+    client: OpenProjectClient, test_project: str, wp_ids: list[int], project_refs: list[str], open_client
 ) -> None:
     """Regression: create_work_package/update_work_package's
     parent_work_package_id reparent target was only resolved read-only,
@@ -328,8 +328,7 @@ async def test_create_and_update_work_package_deny_reparent_into_write_restricte
         read_projects=("*",),
         write_projects=("*",),
     )
-    unrestricted_client = OpenProjectClient(unrestricted_settings)
-    await unrestricted_client.initialize()
+    unrestricted_client = await open_client(unrestricted_settings)
 
     other_identifier = disposable_project_identifier()
     create_project_result = await unrestricted_client.create_project(
@@ -665,7 +664,7 @@ async def test_list_work_package_watchers(client: OpenProjectClient, test_projec
 
 
 async def test_list_work_package_watchers_denies_anchor_outside_read_allowlist(
-    client: OpenProjectClient, test_project: str, wp_ids: list[int]
+    client: OpenProjectClient, test_project: str, wp_ids: list[int], open_client
 ) -> None:
     """Regression: list_work_package_watchers fetched
     work_packages/{id}/watchers with no allowlist check on the anchor work
@@ -683,8 +682,7 @@ async def test_list_work_package_watchers_denies_anchor_outside_read_allowlist(
     read_denied_settings = dataclasses.replace(
         client.settings, read_projects=("no-such-project-for-integration-tests",)
     )
-    read_denied_client = OpenProjectClient(read_denied_settings)
-    await read_denied_client.initialize()
+    read_denied_client = await open_client(read_denied_settings)
 
     with pytest.raises(PermissionDeniedError):
         await read_denied_client.watcher.list_for_work_package(result.work_package_id)
@@ -743,7 +741,7 @@ async def test_add_work_package_watcher_denied_outside_write_allowlist(
 
 
 async def test_list_work_package_file_links_denies_anchor_outside_read_allowlist(
-    client: OpenProjectClient, test_project: str, wp_ids: list[int]
+    client: OpenProjectClient, test_project: str, wp_ids: list[int], open_client
 ) -> None:
     """Regression: list_work_package_file_links fetched
     work_packages/{id}/file_links with no allowlist check on the anchor work
@@ -761,8 +759,7 @@ async def test_list_work_package_file_links_denies_anchor_outside_read_allowlist
     read_denied_settings = dataclasses.replace(
         client.settings, read_projects=("no-such-project-for-integration-tests",)
     )
-    read_denied_client = OpenProjectClient(read_denied_settings)
-    await read_denied_client.initialize()
+    read_denied_client = await open_client(read_denied_settings)
 
     with pytest.raises(PermissionDeniedError):
         await read_denied_client.file_link.list_for_work_package(result.work_package_id)
@@ -853,7 +850,7 @@ async def test_get_project_work_package_context(client: OpenProjectClient, test_
 
 
 async def test_get_work_package_hierarchy_filters_ancestors_and_children_outside_read_allowlist(
-    client: OpenProjectClient, test_project: str, wp_ids: list[int], project_refs: list[str]
+    client: OpenProjectClient, test_project: str, wp_ids: list[int], project_refs: list[str], open_client
 ) -> None:
     """Baseline for the behavior of `WorkPackageService._filter_hierarchy_allowlist`:
     OpenProject's parent/child hierarchy is not project-constrained, so a
@@ -874,8 +871,7 @@ async def test_get_work_package_hierarchy_filters_ancestors_and_children_outside
         read_projects=("*",),
         write_projects=("*",),
     )
-    unrestricted_client = OpenProjectClient(unrestricted_settings)
-    await unrestricted_client.initialize()
+    unrestricted_client = await open_client(unrestricted_settings)
 
     other_identifier = disposable_project_identifier()
     create_project_result = await unrestricted_client.create_project(

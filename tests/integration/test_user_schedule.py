@@ -230,14 +230,13 @@ async def test_create_user_working_hours_preview_without_confirm_does_not_write(
     assert preview_result.result is None
 
 
-async def test_user_schedule_denies_read_when_scope_disabled(client: OpenProjectClient) -> None:
+async def test_user_schedule_denies_read_when_scope_disabled(client: OpenProjectClient, open_client) -> None:
     import dataclasses
 
     from openproject_ce_mcp.client import PermissionDeniedError
 
     disabled_settings = dataclasses.replace(client.settings, enable_user_schedule_read=False)
-    disabled_client = OpenProjectClient(disabled_settings)
-    await disabled_client.initialize()
+    disabled_client = await open_client(disabled_settings)
 
     with pytest.raises(PermissionDeniedError):
         await disabled_client.user_working_hours.list_for_user(_USER_REF)

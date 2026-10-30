@@ -255,7 +255,9 @@ async def test_create_time_entry_until_rejects_end_time_before_start_time(
         )
 
 
-async def test_create_time_entry_rejects_hidden_start_time_field(client: OpenProjectClient, test_project: str) -> None:
+async def test_create_time_entry_rejects_hidden_start_time_field(
+    client: OpenProjectClient, test_project: str, open_client
+) -> None:
     """Regression: create_time_entry/update_time_entry's start_time/end_time
     were the only two time entry fields that bypassed the hidden-field
     write check every other field already had."""
@@ -263,8 +265,7 @@ async def test_create_time_entry_rejects_hidden_start_time_field(client: OpenPro
     spent_on = datetime.date.today().isoformat()
 
     hidden_settings = dataclasses.replace(client.settings, hidden_fields={"time_entry": ("start_time",)})
-    hidden_client = OpenProjectClient(hidden_settings)
-    await hidden_client.initialize()
+    hidden_client = await open_client(hidden_settings)
 
     with pytest.raises(InvalidInputError, match="OPENPROJECT_HIDE_TIME_ENTRY_FIELDS"):
         await hidden_client.time_entry.create(

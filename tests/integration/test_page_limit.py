@@ -7,7 +7,7 @@ import os
 
 import pytest
 
-from openproject_ce_mcp.client import OpenProjectClient, with_instance_page_limit
+from openproject_ce_mcp.client import with_instance_page_limit
 
 from .conftest import _integration_settings, _run_rails_script
 
@@ -36,6 +36,7 @@ def lowered_instance_limit():
 @pytest.mark.asyncio
 async def test_the_listing_of_a_server_paging_tool_reaches_its_end_below_the_configured_page_size(
     lowered_instance_limit,
+    open_client,
 ) -> None:
     settings = _integration_settings()
     assert settings is not None
@@ -44,18 +45,14 @@ async def test_the_listing_of_a_server_paging_tool_reaches_its_end_below_the_con
     capped = await with_instance_page_limit(configured)
     assert capped.max_page_size == INSTANCE_LIMIT
 
-    client = OpenProjectClient(capped)
-    await client.initialize()
-    try:
-        ids: list[int] = []
-        offset: int | None = 1
-        total = 0
-        while offset is not None:
-            page = await client.user.list_users(offset=offset, limit=50)
-            ids.extend(user.id for user in page.results)
-            total = page.total
-            offset = page.next_offset
-        assert len(ids) == len(set(ids)) == total
-        assert total > INSTANCE_LIMIT
-    finally:
-        await client.aclose()
+    client = await open_client(capped)
+    ids: list[int] = []
+    offset: int | None = 1
+    total = 0
+    while offset is not None:
+        page = await client.user.list_users(offset=offset, limit=50)
+        ids.extend(user.id for user in page.results)
+        total = page.total
+        offset = page.next_offset
+    assert len(ids) == len(set(ids)) == total
+    assert total > INSTANCE_LIMIT

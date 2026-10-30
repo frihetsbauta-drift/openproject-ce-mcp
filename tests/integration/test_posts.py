@@ -27,7 +27,9 @@ async def test_get_post(client: OpenProjectClient, seed_post_id: int) -> None:
     assert post.subject
 
 
-async def test_get_post_denied_outside_read_allowlist(client: OpenProjectClient, seed_post_id: int) -> None:
+async def test_get_post_denied_outside_read_allowlist(
+    client: OpenProjectClient, seed_post_id: int, open_client
+) -> None:
     """Posts has no write tools -- this is a read-allowlist test, mirroring
     test_work_packages.py's inline read-denial idiom
     (test_list_work_package_watchers_denies_anchor_outside_read_allowlist),
@@ -38,8 +40,7 @@ async def test_get_post_denied_outside_read_allowlist(client: OpenProjectClient,
     read_denied_settings = dataclasses.replace(
         client.settings, read_projects=("no-such-project-for-integration-tests",)
     )
-    read_denied_client = OpenProjectClient(read_denied_settings)
-    await read_denied_client.initialize()
+    read_denied_client = await open_client(read_denied_settings)
 
     with pytest.raises(PermissionDeniedError):
         await read_denied_client.post.get(seed_post_id)

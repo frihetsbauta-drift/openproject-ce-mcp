@@ -46,7 +46,7 @@ async def test_get_view(client: OpenProjectClient, test_project: str) -> None:
     assert view.id == view_id
 
 
-async def test_list_views_paginates_beyond_a_single_page(client: OpenProjectClient) -> None:
+async def test_list_views_paginates_beyond_a_single_page(client: OpenProjectClient, open_client) -> None:
     """Regression: list_views never sent offset/pageSize to OpenProject at
     all, so a limit smaller than the total available views silently
     returned everything the server happened to include in that first page
@@ -59,8 +59,7 @@ async def test_list_views_paginates_beyond_a_single_page(client: OpenProjectClie
     test project, so the default project-scoped client fixture would see
     zero of them regardless of how many actually exist on the instance."""
     unrestricted_settings = dataclasses.replace(client.settings, read_projects=("*",), write_projects=("*",))
-    unrestricted_client = OpenProjectClient(unrestricted_settings)
-    await unrestricted_client.initialize()
+    unrestricted_client = await open_client(unrestricted_settings)
 
     unfiltered = await unrestricted_client.view.list(limit=100)
     if unfiltered.total < 2:

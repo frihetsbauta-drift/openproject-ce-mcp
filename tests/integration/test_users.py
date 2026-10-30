@@ -27,14 +27,13 @@ from .conftest import wait_for_not_found
 pytestmark = pytest.mark.integration
 
 
-async def test_create_user_rejects_hidden_field(client: OpenProjectClient) -> None:
+async def test_create_user_rejects_hidden_field(client: OpenProjectClient, open_client) -> None:
     """Regression: create_user/update_user/lock_user/unlock_user bypassed
     OPENPROJECT_HIDE_USER_FIELDS entirely on writes -- only reads were
     masked. A hidden field passed to a write should be rejected up front,
     the same as every other hidden-fields-guarded entity."""
     hidden_settings = dataclasses.replace(client.settings, hidden_fields={"user": ("email",)})
-    hidden_client = OpenProjectClient(hidden_settings)
-    await hidden_client.initialize()
+    hidden_client = await open_client(hidden_settings)
 
     with pytest.raises(InvalidInputError, match="OPENPROJECT_HIDE_USER_FIELDS"):
         await hidden_client.user.create(
@@ -46,10 +45,9 @@ async def test_create_user_rejects_hidden_field(client: OpenProjectClient) -> No
         )
 
 
-async def test_lock_user_rejects_hidden_locked_field(client: OpenProjectClient) -> None:
+async def test_lock_user_rejects_hidden_locked_field(client: OpenProjectClient, open_client) -> None:
     hidden_settings = dataclasses.replace(client.settings, hidden_fields={"user": ("locked",)})
-    hidden_client = OpenProjectClient(hidden_settings)
-    await hidden_client.initialize()
+    hidden_client = await open_client(hidden_settings)
 
     me = await client.current_user.get_current_user()
 

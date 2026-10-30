@@ -13,7 +13,7 @@ pytestmark = pytest.mark.integration
 
 
 async def test_create_attachment_rejects_hidden_file_name_field(
-    client: OpenProjectClient, test_project: str, wp_ids: list[int]
+    client: OpenProjectClient, test_project: str, wp_ids: list[int], open_client
 ) -> None:
     """Regression: create_work_package_attachment's file_name field bypassed
     the hidden-fields guard on writes (only the optional description field
@@ -28,8 +28,7 @@ async def test_create_attachment_rejects_hidden_file_name_field(
     wp_ids.append(result.work_package_id)
 
     hidden_settings = dataclasses.replace(client.settings, hidden_fields={"attachment": ("file_name",)})
-    hidden_client = OpenProjectClient(hidden_settings)
-    await hidden_client.initialize()
+    hidden_client = await open_client(hidden_settings)
 
     with pytest.raises(InvalidInputError, match="OPENPROJECT_HIDE_ATTACHMENT_FIELDS"):
         await hidden_client.attachment.create(
@@ -39,18 +38,18 @@ async def test_create_attachment_rejects_hidden_file_name_field(
         )
 
 
-def _attachment_capable_client(client: OpenProjectClient) -> OpenProjectClient:
+async def _attachment_capable_client(client: OpenProjectClient, open_client) -> OpenProjectClient:
     """create_work_package_attachment requires OPENPROJECT_ATTACHMENT_ROOT to be
     set before it will read real file bytes off disk; the shared `client`
     fixture doesn't set one, so build a copy that does, rooted at the repo's
     working directory (file_path is then given relative to that root, mirroring
     the unit test pattern in tests/test_client.py)."""
     rooted_settings = dataclasses.replace(client.settings, attachment_root=os.getcwd())
-    return OpenProjectClient(rooted_settings)
+    return await open_client(rooted_settings)
 
 
 async def test_list_work_package_attachments_and_delete_attachment(
-    client: OpenProjectClient, test_project: str, wp_ids: list[int]
+    client: OpenProjectClient, test_project: str, wp_ids: list[int], open_client
 ) -> None:
     """Round-trips list_work_package_attachments (GET
     work_packages/{id}/attachments) and delete_attachment (GET+DELETE
@@ -64,8 +63,7 @@ async def test_list_work_package_attachments_and_delete_attachment(
     assert result.ready
     wp_ids.append(result.work_package_id)
 
-    rooted_client = _attachment_capable_client(client)
-    await rooted_client.initialize()
+    rooted_client = await _attachment_capable_client(client, open_client)
 
     created = await rooted_client.attachment.create(
         work_package_id=result.work_package_id,
@@ -94,7 +92,7 @@ async def test_list_work_package_attachments_and_delete_attachment(
 
 
 async def test_delete_attachment_denied_outside_write_allowlist(
-    denied_client: OpenProjectClient, client: OpenProjectClient, test_project: str, wp_ids: list[int]
+    denied_client: OpenProjectClient, client: OpenProjectClient, test_project: str, wp_ids: list[int], open_client
 ) -> None:
     result = await client.work_package.create(
         project=test_project,
@@ -105,8 +103,7 @@ async def test_delete_attachment_denied_outside_write_allowlist(
     assert result.ready
     wp_ids.append(result.work_package_id)
 
-    rooted_client = _attachment_capable_client(client)
-    await rooted_client.initialize()
+    rooted_client = await _attachment_capable_client(client, open_client)
 
     created = await rooted_client.attachment.create(
         work_package_id=result.work_package_id,
@@ -141,7 +138,7 @@ async def _upload(rooted_client: OpenProjectClient, work_package_id: int, file_p
 
 
 async def test_get_attachment_content_inlines_png_and_text(
-    client: OpenProjectClient, test_project: str, wp_ids: list[int]
+    client: OpenProjectClient, test_project: str, wp_ids: list[int], open_client
 ) -> None:
     """Round-trips GET /attachments/{id}/content -- including OpenProject's
     redirect to its storage backend -- for an image and for a text file."""
@@ -154,8 +151,7 @@ async def test_get_attachment_content_inlines_png_and_text(
     assert result.ready
     wp_ids.append(result.work_package_id)
 
-    rooted_client = _attachment_capable_client(client)
-    await rooted_client.initialize()
+    rooted_client = await _attachment_capable_client(client, open_client)
     png_id = await _upload(rooted_client, result.work_package_id, "tests/fixtures/pixel.png")
     text_id = await _upload(rooted_client, result.work_package_id, "tests/fixtures/spec.md")
     try:
@@ -196,7 +192,7 @@ async def test_get_attachment_content_inlines_png_and_text(
 
 
 async def test_get_attachment_content_denied_outside_read_allowlist(
-    client: OpenProjectClient, test_project: str, wp_ids: list[int]
+    client: OpenProjectClient, test_project: str, wp_ids: list[int], open_client
 ) -> None:
     """`denied_client` only narrows the WRITE allowlist; reading content is a
     read, so the denial has to come from a read allowlist that does not
@@ -206,8 +202,7 @@ async def test_get_attachment_content_denied_outside_read_allowlist(
     read_denied_settings = dataclasses.replace(
         client.settings, read_projects=("no-such-project-for-integration-tests",)
     )
-    read_denied_client = OpenProjectClient(read_denied_settings)
-    await read_denied_client.initialize()
+    read_denied_client = await open_client(read_denied_settings)
 
     result = await client.work_package.create(
         project=test_project,
@@ -218,8 +213,7 @@ async def test_get_attachment_content_denied_outside_read_allowlist(
     assert result.ready
     wp_ids.append(result.work_package_id)
 
-    rooted_client = _attachment_capable_client(client)
-    await rooted_client.initialize()
+    rooted_client = await _attachment_capable_client(client, open_client)
     png_id = await _upload(rooted_client, result.work_package_id, "tests/fixtures/pixel.png")
     try:
         with pytest.raises(PermissionDeniedError):

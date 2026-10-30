@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import dataclasses
 
 import pytest
@@ -39,7 +40,7 @@ async def test_get_project_admin_context(client: OpenProjectClient, test_project
 
 
 async def test_get_project_admin_context_filters_parent_candidates_by_read_allowlist(
-    client: OpenProjectClient, test_project: str, project_refs: list[str]
+    client: OpenProjectClient, test_project: str, project_refs: list[str], open_client
 ) -> None:
     """available_parent_projects must be filtered by OPENPROJECT_READ_PROJECTS,
     not just by what OpenProject itself considers a valid parent candidate --
@@ -59,8 +60,7 @@ async def test_get_project_admin_context_filters_parent_candidates_by_read_allow
         read_projects=("*",),
         write_projects=("*",),
     )
-    unrestricted_client = OpenProjectClient(unrestricted_settings)
-    await unrestricted_client.initialize()
+    unrestricted_client = await open_client(unrestricted_settings)
 
     identifier = disposable_project_identifier()
     create_result = await unrestricted_client.create_project(
@@ -151,8 +151,12 @@ async def test_list_principals(client: OpenProjectClient) -> None:
     # prior conditional check asserted nothing when the collection happened
     # to be empty.
     assert result.count > 0
+    # The first page of an unfiltered listing grows past the current user once
+    # the instance holds enough users, so look the current user up by name.
     me = await client.current_user.get_current_user()
-    assert any(p.id == me.id for p in result.results)
+    assert me.name
+    found = await client.principal.list_principals(search=me.name)
+    assert me.id in {p.id for p in found.results}
 
 
 async def test_list_principals_paginates_beyond_a_single_page(client: OpenProjectClient) -> None:
@@ -199,13 +203,10 @@ async def test_add_and_remove_project_favorite(client: OpenProjectClient, test_p
         assert removed.state == "confirmed"
         assert removed.action == "unfavorite"
     finally:
-        # Best-effort restore to unfavorited in case an assertion above failed
-        # mid-sequence, so the test project's favorite state doesn't leak
-        # into other tests/runs.
-        try:
+        # Restore the unfavorited state in case an assertion above failed mid-sequence, so it does not leak
+        # into other tests or runs. Before OpenProject 17.0 the endpoint does not exist and answers NotFound.
+        with contextlib.suppress(NotFoundError):
             await client.remove_project_favorite(project=test_project, confirm=True)
-        except Exception:
-            pass
 
 
 async def test_add_project_favorite_denied_outside_write_allowlist(
@@ -216,7 +217,7 @@ async def test_add_project_favorite_denied_outside_write_allowlist(
 
 
 async def test_update_project_denies_reparent_into_write_restricted_project(
-    client: OpenProjectClient, test_project: str, project_refs: list[str]
+    client: OpenProjectClient, test_project: str, project_refs: list[str], open_client
 ) -> None:
     """Regression: update_project's reparent target was only resolved
     read-only, letting a caller reparent a project they can write into
@@ -227,8 +228,7 @@ async def test_update_project_denies_reparent_into_write_restricted_project(
         read_projects=("*",),
         write_projects=("*",),
     )
-    unrestricted_client = OpenProjectClient(unrestricted_settings)
-    await unrestricted_client.initialize()
+    unrestricted_client = await open_client(unrestricted_settings)
 
     target_identifier = disposable_project_identifier()
     create_result = await unrestricted_client.create_project(

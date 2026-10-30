@@ -41,7 +41,7 @@ async def test_list_versions_with_search(client: OpenProjectClient, test_project
 
 
 async def test_list_versions_search_walks_every_server_page(
-    client: OpenProjectClient, test_project: str, version_ids: list[int]
+    client: OpenProjectClient, test_project: str, version_ids: list[int], open_client
 ) -> None:
     """Regression: list_versions' search branch fetched a single server page
     capped at settings.max_page_size and filtered client-side, on the
@@ -69,8 +69,7 @@ async def test_list_versions_search_walks_every_server_page(
         version_ids.append(result.version_id)
 
     tiny_page_settings = dataclasses.replace(client.settings, max_page_size=1)
-    tiny_page_client = OpenProjectClient(tiny_page_settings)
-    await tiny_page_client.initialize()
+    tiny_page_client = await open_client(tiny_page_settings)
 
     found_ids: set[int] = set()
     result_offset = 1

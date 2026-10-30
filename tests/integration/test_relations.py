@@ -14,7 +14,7 @@ pytestmark = pytest.mark.integration
 
 
 async def test_create_relation_denied_when_target_outside_write_allowlist(
-    client: OpenProjectClient, test_project: str, wp_ids: list[int], project_refs: list[str]
+    client: OpenProjectClient, test_project: str, wp_ids: list[int], project_refs: list[str], open_client
 ) -> None:
     """Regression: create_work_package_relation authorized only the source
     work package's project against OPENPROJECT_WRITE_PROJECTS -- the
@@ -26,8 +26,7 @@ async def test_create_relation_denied_when_target_outside_write_allowlist(
         read_projects=("*",),
         write_projects=("*",),
     )
-    unrestricted_client = OpenProjectClient(unrestricted_settings)
-    await unrestricted_client.initialize()
+    unrestricted_client = await open_client(unrestricted_settings)
 
     other_identifier = disposable_project_identifier()
     create_project_result = await unrestricted_client.project.create(
@@ -60,7 +59,7 @@ async def test_create_relation_denied_when_target_outside_write_allowlist(
 
 
 async def test_create_relation_rejects_hidden_type_field(
-    client: OpenProjectClient, test_project: str, wp_ids: list[int]
+    client: OpenProjectClient, test_project: str, wp_ids: list[int], open_client
 ) -> None:
     """Regression: relation.type/description bypassed the hidden-fields
     guard on writes (only description was covered, not type)."""
@@ -76,8 +75,7 @@ async def test_create_relation_rejects_hidden_type_field(
     wp_ids.append(target.work_package_id)
 
     hidden_settings = dataclasses.replace(client.settings, hidden_fields={"relation": ("type",)})
-    hidden_client = OpenProjectClient(hidden_settings)
-    await hidden_client.initialize()
+    hidden_client = await open_client(hidden_settings)
 
     with pytest.raises(InvalidInputError, match="OPENPROJECT_HIDE_RELATION_FIELDS"):
         await hidden_client.relation.create(

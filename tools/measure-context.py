@@ -30,8 +30,10 @@ in README.md's "How it works" section). Three parts:
    Part 2 creates three representative work packages in the target project
    (realistic subjects/descriptions, not empty seed data) for the list/read/
    search/update measurements, plus 5 more for the bulk-create/bulk-update
-   measurements. It does not delete any of them afterward — the Docker test
-   project is disposable by convention; don't point this at a real instance.
+   measurements and 5 for the raw comparison. It deletes all of them when it
+   ends, also after an error or an interrupt, and exits with an error if a
+   deletion fails. ``--keep`` leaves them in place for inspection; don't point
+   this at a real instance.
 
 3. **Cost of null-vs-absent distinguishability** — reuses
    the live rows from part 2 (real, uneven None-field population, not an
@@ -60,6 +62,8 @@ import json
 import os
 import sys
 import tempfile
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -252,7 +256,55 @@ def _raw_api(settings: Settings) -> httpx.AsyncClient:
     )
 
 
-async def measure_response_sizes() -> list | None:
+async def _delete_work_packages(settings: Settings, work_package_ids: list[int]) -> list[str]:
+    """Deletes the work packages and returns one line per failure; one already gone is not a failure."""
+    failures = []
+    async with _raw_api(settings) as http:
+        for work_package_id in work_package_ids:
+            try:
+                response = await http.delete(f"/api/v3/work_packages/{work_package_id}")
+                if response.status_code != 404:
+                    response.raise_for_status()
+            except httpx.HTTPError as exc:
+                failures.append(f"work package {work_package_id}: {type(exc).__name__}: {exc}")
+    return failures
+
+
+@asynccontextmanager
+async def _measurement_workspace(
+    settings: Settings, *, keep: bool
+) -> AsyncIterator[tuple[OpenProjectClient, list[int]]]:
+    """Owns the MCP client and every work package the run creates (callers append each id the moment it exists).
+
+    Both are released when the block ends, also on an exception, a KeyboardInterrupt or a cancellation. A
+    deletion that fails is reported; it ends the run with an error unless another exception is already on its way.
+    """
+    client = OpenProjectClient(settings)
+    created: list[int] = []
+
+    async def release() -> list[str]:
+        try:
+            return [] if keep else await _delete_work_packages(settings, created)
+        finally:
+            await client.aclose()
+
+    try:
+        await client.initialize()
+        yield client, created
+    except BaseException:
+        try:
+            failures = await release()
+        except Exception as exc:
+            failures = [f"cleanup itself failed: {type(exc).__name__}: {exc}"]
+        for failure in failures:
+            print(f"Cleanup failed: {failure}", file=sys.stderr)
+        raise
+    failures = await release()
+    if failures:
+        sys.exit("Cleanup left measurement work packages behind:\n" + "\n".join(failures))
+
+
+async def measure_response_sizes(*, keep: bool = False) -> list | None:
     print("=== Response sizes (raw API vs. MCP) ===\n")
     if not os.environ.get("OPENPROJECT_BASE_URL") and not os.environ.get("OPENPROJECT_API_TOKEN"):
         print("Skipped: set the variables docker/test/up.sh 178 prints (never production) to run this part.\n")
@@ -264,216 +316,218 @@ async def measure_response_sizes() -> list | None:
     project = target.project
 
     settings = _measurement_settings(target.base_url, os.environ["OPENPROJECT_API_TOKEN"], project)
-    client = OpenProjectClient(settings)
-    await client.initialize()
+    async with _measurement_workspace(settings, keep=keep) as (client, to_delete):
+        created_ids = []
+        project_id: str | None = None
+        run_marker = f"context-measure-{uuid4().hex[:12]}"
+        async with _raw_api(settings) as http:
+            for index, (subject, description) in enumerate(SAMPLE_WORK_PACKAGES):
+                if index == 0:
+                    subject = f"{subject} [{run_marker}]"
+                resp = await http.post(
+                    f"/api/v3/projects/{project}/work_packages",
+                    json={
+                        "subject": subject,
+                        "description": {"format": "markdown", "raw": description},
+                        "_links": {"type": {"href": "/api/v3/types/7"}},
+                    },
+                )
+                resp.raise_for_status()
+                created_payload = resp.json()
+                created_ids.append(created_payload["id"])
+                to_delete.append(created_payload["id"])
+                if project_id is None:
+                    project_id = created_payload["_links"]["project"]["href"].rsplit("/", 1)[-1]
 
-    created_ids = []
-    project_id: str | None = None
-    run_marker = f"context-measure-{uuid4().hex[:12]}"
-    async with _raw_api(settings) as http:
-        for index, (subject, description) in enumerate(SAMPLE_WORK_PACKAGES):
-            if index == 0:
-                subject = f"{subject} [{run_marker}]"
-            resp = await http.post(
-                f"/api/v3/projects/{project}/work_packages",
-                json={
-                    "subject": subject,
-                    "description": {"format": "markdown", "raw": description},
-                    "_links": {"type": {"href": "/api/v3/types/7"}},
+            if project_id is None:
+                raise RuntimeError("Measurement setup did not return a project id.")
+            raw_filters = json.dumps([{"project_id": {"operator": "=", "values": [project_id]}}])
+            resp = await http.get(
+                "/api/v3/work_packages",
+                params={
+                    "offset": "1",
+                    "pageSize": str(len(created_ids)),
+                    "filters": raw_filters,
+                    "sortBy": json.dumps([["id", "desc"]]),
                 },
             )
             resp.raise_for_status()
-            created_payload = resp.json()
-            created_ids.append(created_payload["id"])
-            if project_id is None:
-                project_id = created_payload["_links"]["project"]["href"].rsplit("/", 1)[-1]
+            raw_collection = resp.json()
 
-        if project_id is None:
-            raise RuntimeError("Measurement setup did not return a project id.")
-        raw_filters = json.dumps([{"project_id": {"operator": "=", "values": [project_id]}}])
-        resp = await http.get(
-            "/api/v3/work_packages",
-            params={
-                "offset": "1",
-                "pageSize": str(len(created_ids)),
-                "filters": raw_filters,
-                "sortBy": json.dumps([["id", "desc"]]),
-            },
+        raw_json = json.dumps(raw_collection)
+        raw_tokens = _tokens(raw_json)
+
+        # Sort by id desc so the work packages just created above are always
+        # within the first `limit` rows, regardless of how many other work
+        # packages already exist in this (disposable) test project.
+        result = await client.work_package.list(
+            project=project,
+            limit=len(created_ids),
+            sort_by=[SortCriterion("id", "desc")],
         )
-        resp.raise_for_status()
-        raw_collection = resp.json()
+        rows = list(result.results)
+        measured_ids = [row.id for row in rows]
+        if set(measured_ids) != set(created_ids):
+            print(
+                f"Warning: expected ids {created_ids}, found {measured_ids} — numbers below may include concurrent writes.\n"
+            )
 
-    raw_json = json.dumps(raw_collection)
-    raw_tokens = _tokens(raw_json)
+        full_json = json.dumps(_to_payload(result))
+        full_tokens = _tokens(full_json)
+        # Use the real _select_fields() path (same as a caller passing `select`
+        # would exercise via the registered wrapper) rather than filtering an
+        # already-fully-serialized row after the fact -- filtering post-hoc would
+        # silently miss any None-valued field among select_fields, since it's
+        # already gone from _to_payload(r)'s default (elide_none=True) output
+        # before the filter ever runs.
+        select_fields = frozenset({"id", "display_id", "subject", "status", "assignee"})
+        select_json = json.dumps(_to_payload(result, select=select_fields))
+        select_tokens = _tokens(select_json)
 
-    # Sort by id desc so the work packages just created above are always
-    # within the first `limit` rows, regardless of how many other work
-    # packages already exist in this (disposable, never-cleaned) test
-    # project from earlier runs.
-    result = await client.work_package.list(
-        project=project,
-        limit=len(created_ids),
-        sort_by=[SortCriterion("id", "desc")],
-    )
-    rows = list(result.results)
-    measured_ids = [row.id for row in rows]
-    if set(measured_ids) != set(created_ids):
+        print(f"Raw OpenProject REST API v3 (HAL), {len(rows)} rows: {len(raw_json)} bytes, ~{raw_tokens} tokens")
         print(
-            f"Warning: expected ids {created_ids}, found {measured_ids} — numbers below may include concurrent writes.\n"
+            f"list_work_packages (MCP), {len(rows)} rows: {len(full_json)} bytes, ~{full_tokens} tokens "
+            f"(-{round((1 - full_tokens / raw_tokens) * 100)}% vs. raw)"
         )
-
-    full_json = json.dumps(_to_payload(result))
-    full_tokens = _tokens(full_json)
-    # Use the real _select_fields() path (same as a caller passing `select`
-    # would exercise via the registered wrapper) rather than filtering an
-    # already-fully-serialized row after the fact -- filtering post-hoc would
-    # silently miss any None-valued field among select_fields, since it's
-    # already gone from _to_payload(r)'s default (elide_none=True) output
-    # before the filter ever runs.
-    select_fields = frozenset({"id", "display_id", "subject", "status", "assignee"})
-    select_json = json.dumps(_to_payload(result, select=select_fields))
-    select_tokens = _tokens(select_json)
-
-    print(f"Raw OpenProject REST API v3 (HAL), {len(rows)} rows: {len(raw_json)} bytes, ~{raw_tokens} tokens")
-    print(
-        f"list_work_packages (MCP), {len(rows)} rows: {len(full_json)} bytes, ~{full_tokens} tokens "
-        f"(-{round((1 - full_tokens / raw_tokens) * 100)}% vs. raw)"
-    )
-    print(
-        f"list_work_packages with select (5 fields): {len(select_json)} bytes, ~{select_tokens} tokens "
-        f"(-{round((1 - select_tokens / raw_tokens) * 100)}% vs. raw)"
-    )
-    print(
-        f"\nCreated work packages {created_ids} in project '{project}' for this measurement; "
-        "left in place (disposable test project)."
-    )
-    print()
-
-    async with _raw_api(settings) as http:
-        # --- Single read: get_work_package vs. GET /work_packages/{id} ---
-        single_id = created_ids[0]
-        resp = await http.get(f"/api/v3/work_packages/{single_id}")
-        resp.raise_for_status()
-        raw_single_json = json.dumps(resp.json())
-        lock_version = resp.json()["lockVersion"]
-
-        detail = await client.work_package.get(single_id)
-        _report(
-            "get_work_package (single read)",
-            raw_single_json,
-            json.dumps(_to_payload(detail, elide_none=False)),
+        print(
+            f"list_work_packages with select (5 fields): {len(select_json)} bytes, ~{select_tokens} tokens "
+            f"(-{round((1 - select_tokens / raw_tokens) * 100)}% vs. raw)"
         )
-
-        # --- Search: search_work_packages vs. GET /work_packages?filters=subject_or_id ---
-        query = run_marker
-        raw_filters = json.dumps(
-            [
-                {"subject_or_id": {"operator": "**", "values": [query]}},
-                {"project_id": {"operator": "=", "values": [project_id]}},
-            ]
+        print(
+            f"\nCreated work packages {to_delete} in project '{project}' for this measurement; "
+            + ("kept because of --keep." if keep else "they are deleted when the measurement ends.")
         )
-        resp = await http.get(
-            "/api/v3/work_packages",
-            params={"offset": "1", "pageSize": "50", "filters": raw_filters},
-        )
-        resp.raise_for_status()
-        raw_search_json = json.dumps(resp.json())
+        print()
 
-        search_result = await client.work_package.search(search=query, project=project, limit=50)
-        _report(
-            f"search_work_packages ({len(search_result.results)} rows)",
-            raw_search_json,
-            json.dumps(_to_payload(search_result)),
-        )
+        async with _raw_api(settings) as http:
+            # --- Single read: get_work_package vs. GET /work_packages/{id} ---
+            single_id = created_ids[0]
+            resp = await http.get(f"/api/v3/work_packages/{single_id}")
+            resp.raise_for_status()
+            raw_single_json = json.dumps(resp.json())
+            lock_version = resp.json()["lockVersion"]
 
-        # --- Confirmed single update: update_work_package vs. PATCH /work_packages/{id} ---
-        resp = await http.patch(
-            f"/api/v3/work_packages/{single_id}",
-            json={"lockVersion": lock_version, "percentageDone": 40},
-        )
-        resp.raise_for_status()
-        raw_update_json = json.dumps(resp.json())
+            detail = await client.work_package.get(single_id)
+            _report(
+                "get_work_package (single read)",
+                raw_single_json,
+                json.dumps(_to_payload(detail, elide_none=False)),
+            )
 
-        update_result = await client.work_package.update(work_package_id=single_id, percentage_done=60, confirm=True)
-        _report(
-            "update_work_package (confirmed write)",
-            raw_update_json,
-            # update_work_package has no `select` param, so its real registered
-            # wrapper uses elide_none=False -- match that here.
-            json.dumps(_to_payload(update_result, elide_none=False)),
-        )
-
-        # --- Bulk create ×5: bulk_create_work_packages vs. 5x POST /work_packages ---
-        # type "7" matches the numeric type id used for the raw POSTs above and below
-        # (same type as SAMPLE_WORK_PACKAGES) — avoids a name/id mismatch between the
-        # raw and MCP creation paths.
-        bulk_items = [{"project": project, "type": "7", "subject": f"Bulk-created sample {i}"} for i in range(1, 6)]
-        raw_bulk_create_parts = []
-        for item in bulk_items:
-            resp = await http.post(
-                f"/api/v3/projects/{project}/work_packages",
-                json={"subject": item["subject"], "_links": {"type": {"href": "/api/v3/types/7"}}},
+            # --- Search: search_work_packages vs. GET /work_packages?filters=subject_or_id ---
+            query = run_marker
+            raw_filters = json.dumps(
+                [
+                    {"subject_or_id": {"operator": "**", "values": [query]}},
+                    {"project_id": {"operator": "=", "values": [project_id]}},
+                ]
+            )
+            resp = await http.get(
+                "/api/v3/work_packages",
+                params={"offset": "1", "pageSize": "50", "filters": raw_filters},
             )
             resp.raise_for_status()
-            raw_bulk_create_parts.append(resp.json())
+            raw_search_json = json.dumps(resp.json())
 
-        bulk_create_result = await client.work_package.bulk_create(items=bulk_items, confirm=True)
-        created_ids.extend(
-            item.result.result.id
-            for item in bulk_create_result.items
-            if item.success and item.result and item.result.result
-        )
-        _report(
-            f"bulk_create_work_packages (x{len(bulk_items)}, vs. {len(bulk_items)} individual raw POSTs)",
-            json.dumps(raw_bulk_create_parts),
-            json.dumps(_to_payload(bulk_create_result)),
-        )
-        _report(
-            "bulk_create_work_packages with select (work_package_id, result.subject)",
-            json.dumps(raw_bulk_create_parts),
-            json.dumps(_to_payload(bulk_create_result, select=frozenset({"work_package_id", "result.subject"}))),
-        )
+            search_result = await client.work_package.search(search=query, project=project, limit=50)
+            _report(
+                f"search_work_packages ({len(search_result.results)} rows)",
+                raw_search_json,
+                json.dumps(_to_payload(search_result)),
+            )
 
-        # --- Bulk update ×5: bulk_update_work_packages vs. 5x PATCH /work_packages/{id} ---
-        bulk_target_ids = created_ids[-len(bulk_items) :]
-        raw_bulk_update_parts = []
-        for wp_id in bulk_target_ids:
-            resp = await http.get(f"/api/v3/work_packages/{wp_id}")
-            resp.raise_for_status()
-            wp_lock_version = resp.json()["lockVersion"]
+            # --- Confirmed single update: update_work_package vs. PATCH /work_packages/{id} ---
             resp = await http.patch(
-                f"/api/v3/work_packages/{wp_id}", json={"lockVersion": wp_lock_version, "percentageDone": 20}
+                f"/api/v3/work_packages/{single_id}",
+                json={"lockVersion": lock_version, "percentageDone": 40},
             )
             resp.raise_for_status()
-            raw_bulk_update_parts.append(resp.json())
+            raw_update_json = json.dumps(resp.json())
 
-        bulk_update_items = [{"work_package_id": wp_id, "percentage_done": 30} for wp_id in bulk_target_ids]
-        bulk_update_result = await client.work_package.bulk_update(items=bulk_update_items, confirm=True)
-        _report(
-            f"bulk_update_work_packages (x{len(bulk_target_ids)}, vs. {len(bulk_target_ids)} individual raw PATCHes)",
-            json.dumps(raw_bulk_update_parts),
-            json.dumps(_to_payload(bulk_update_result)),
+            update_result = await client.work_package.update(
+                work_package_id=single_id, percentage_done=60, confirm=True
+            )
+            _report(
+                "update_work_package (confirmed write)",
+                raw_update_json,
+                # update_work_package has no `select` param, so its real registered
+                # wrapper uses elide_none=False -- match that here.
+                json.dumps(_to_payload(update_result, elide_none=False)),
+            )
+
+            # --- Bulk create ×5: bulk_create_work_packages vs. 5x POST /work_packages ---
+            # type "7" matches the numeric type id used for the raw POSTs above and below
+            # (same type as SAMPLE_WORK_PACKAGES) — avoids a name/id mismatch between the
+            # raw and MCP creation paths.
+            bulk_items = [{"project": project, "type": "7", "subject": f"Bulk-created sample {i}"} for i in range(1, 6)]
+            raw_bulk_create_parts = []
+            for item in bulk_items:
+                resp = await http.post(
+                    f"/api/v3/projects/{project}/work_packages",
+                    json={"subject": item["subject"], "_links": {"type": {"href": "/api/v3/types/7"}}},
+                )
+                resp.raise_for_status()
+                raw_bulk_create_parts.append(resp.json())
+                to_delete.append(resp.json()["id"])
+
+            bulk_create_result = await client.work_package.bulk_create(items=bulk_items, confirm=True)
+            bulk_created_ids = [
+                item.result.result.id
+                for item in bulk_create_result.items
+                if item.success and item.result and item.result.result
+            ]
+            created_ids.extend(bulk_created_ids)
+            to_delete.extend(bulk_created_ids)
+            _report(
+                f"bulk_create_work_packages (x{len(bulk_items)}, vs. {len(bulk_items)} individual raw POSTs)",
+                json.dumps(raw_bulk_create_parts),
+                json.dumps(_to_payload(bulk_create_result)),
+            )
+            _report(
+                "bulk_create_work_packages with select (work_package_id, result.subject)",
+                json.dumps(raw_bulk_create_parts),
+                json.dumps(_to_payload(bulk_create_result, select=frozenset({"work_package_id", "result.subject"}))),
+            )
+
+            # --- Bulk update ×5: bulk_update_work_packages vs. 5x PATCH /work_packages/{id} ---
+            bulk_target_ids = created_ids[-len(bulk_items) :]
+            raw_bulk_update_parts = []
+            for wp_id in bulk_target_ids:
+                resp = await http.get(f"/api/v3/work_packages/{wp_id}")
+                resp.raise_for_status()
+                wp_lock_version = resp.json()["lockVersion"]
+                resp = await http.patch(
+                    f"/api/v3/work_packages/{wp_id}", json={"lockVersion": wp_lock_version, "percentageDone": 20}
+                )
+                resp.raise_for_status()
+                raw_bulk_update_parts.append(resp.json())
+
+            bulk_update_items = [{"work_package_id": wp_id, "percentage_done": 30} for wp_id in bulk_target_ids]
+            bulk_update_result = await client.work_package.bulk_update(items=bulk_update_items, confirm=True)
+            _report(
+                f"bulk_update_work_packages (x{len(bulk_target_ids)}, vs. {len(bulk_target_ids)} individual raw PATCHes)",
+                json.dumps(raw_bulk_update_parts),
+                json.dumps(_to_payload(bulk_update_result)),
+            )
+            _report(
+                "bulk_update_work_packages with select (work_package_id, result.percentage_done)",
+                json.dumps(raw_bulk_update_parts),
+                json.dumps(
+                    _to_payload(bulk_update_result, select=frozenset({"work_package_id", "result.percentage_done"}))
+                ),
+            )
+
+        # A fixed 20-row page of the project's newest work packages for Part 3.
+        # This is a much richer, real None-field distribution than just the three
+        # representative rows above while keeping the sample size stable
+        # however many work packages the test project holds.
+        page_result = await client.work_package.list(
+            project=project,
+            limit=20,
+            sort_by=[SortCriterion("id", "desc")],
         )
-        _report(
-            "bulk_update_work_packages with select (work_package_id, result.percentage_done)",
-            json.dumps(raw_bulk_update_parts),
-            json.dumps(
-                _to_payload(bulk_update_result, select=frozenset({"work_package_id", "result.percentage_done"}))
-            ),
-        )
 
-    # A fixed 20-row page of the project's newest work packages for Part 3.
-    # This is a much richer, real None-field distribution than just the three
-    # representative rows above while keeping the sample size stable across
-    # repeated runs against the deliberately non-cleaned test project.
-    page_result = await client.work_package.list(
-        project=project,
-        limit=20,
-        sort_by=[SortCriterion("id", "desc")],
-    )
-
-    await client.aclose()
-    return list(page_result.results)
+        return list(page_result.results)
 
 
 # ── Part 3: cost of null-vs-absent distinguishability ───────────────────────
@@ -555,7 +609,7 @@ async def main() -> None:
         await export_catalogs(Path(sys.argv[2]))
         return
     await measure_tools_list()
-    rows = await measure_response_sizes()
+    rows = await measure_response_sizes(keep="--keep" in sys.argv[1:])
     if rows is not None:
         measure_null_distinguishability_cost(rows)
     else:

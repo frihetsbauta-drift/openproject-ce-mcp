@@ -34,9 +34,10 @@ async def _delete_attachment_raw(attachment_id: int) -> None:
         response.raise_for_status()
 
 
-async def _upload_list_cleanup(client: OpenProjectClient, tmp_path, container_type: str, container_id: int) -> None:
-    rooted = OpenProjectClient(dataclasses.replace(client.settings, attachment_root=str(tmp_path)))
-    await rooted.initialize()
+async def _upload_list_cleanup(
+    client: OpenProjectClient, tmp_path, container_type: str, container_id: int, open_client
+) -> None:
+    rooted = await open_client(dataclasses.replace(client.settings, attachment_root=str(tmp_path)))
     note = tmp_path / f"{container_type}-note.txt"
     note.write_text(f"integration test upload to {container_type}")
     preview = await rooted.attachment.create_for_container(
@@ -53,19 +54,18 @@ async def _upload_list_cleanup(client: OpenProjectClient, tmp_path, container_ty
         assert mine and mine[0].file_name == note.name and mine[0].container_id == container_id
     finally:
         await _delete_attachment_raw(uploaded.attachment_id)
-        await rooted.aclose()
 
 
-async def test_wiki_page_attachments(client: OpenProjectClient, tmp_path, seed_wiki_page_id: int) -> None:
-    await _upload_list_cleanup(client, tmp_path, "wiki_page", seed_wiki_page_id)
+async def test_wiki_page_attachments(client: OpenProjectClient, tmp_path, seed_wiki_page_id: int, open_client) -> None:
+    await _upload_list_cleanup(client, tmp_path, "wiki_page", seed_wiki_page_id, open_client)
 
 
-async def test_post_attachments(client: OpenProjectClient, tmp_path, seed_post_id: int) -> None:
-    await _upload_list_cleanup(client, tmp_path, "post", seed_post_id)
+async def test_post_attachments(client: OpenProjectClient, tmp_path, seed_post_id: int, open_client) -> None:
+    await _upload_list_cleanup(client, tmp_path, "post", seed_post_id, open_client)
 
 
 async def test_meeting_attachments(
-    client: OpenProjectClient, tmp_path, test_project: str, meeting_ids: list[int]
+    client: OpenProjectClient, tmp_path, test_project: str, meeting_ids: list[int], open_client
 ) -> None:
     try:
         meeting = await client.meeting.create(project=test_project, title=f"{_SUBJECT} attachments", confirm=True)
@@ -73,13 +73,15 @@ async def test_meeting_attachments(
         pytest.skip("Meetings module not installed/enabled on this instance")
     assert meeting.ready, meeting.validation_errors
     meeting_ids.append(meeting.meeting_id)
-    await _upload_list_cleanup(client, tmp_path, "meeting", meeting.meeting_id)
+    await _upload_list_cleanup(client, tmp_path, "meeting", meeting.meeting_id, open_client)
 
 
-async def test_comment_attachments(client: OpenProjectClient, tmp_path, test_project: str, wp_ids: list[int]) -> None:
+async def test_comment_attachments(
+    client: OpenProjectClient, tmp_path, test_project: str, wp_ids: list[int], open_client
+) -> None:
     work_package_id = await _new_work_package(client, test_project, wp_ids, "comment-attachment")
     comment = await client.work_package.add_comment(
         work_package_id=work_package_id, comment="comment with a file", confirm=True
     )
     assert comment.result is not None
-    await _upload_list_cleanup(client, tmp_path, "activity", comment.result.id)
+    await _upload_list_cleanup(client, tmp_path, "activity", comment.result.id, open_client)

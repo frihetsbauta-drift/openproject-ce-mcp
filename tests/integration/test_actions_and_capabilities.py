@@ -33,7 +33,7 @@ async def test_list_capabilities_for_project(client: OpenProjectClient, test_pro
 
 
 async def test_list_capabilities_by_id_denies_record_outside_read_allowlist(
-    client: OpenProjectClient, test_project: str
+    client: OpenProjectClient, test_project: str, open_client
 ) -> None:
     """Regression: capability_id-only lookups fetched the single capability
     record directly (GET capabilities/{id}) without ever checking whether its
@@ -48,8 +48,7 @@ async def test_list_capabilities_by_id_denies_record_outside_read_allowlist(
     capability_id = listed.results[0].id
 
     denied_settings = dataclasses.replace(client.settings, read_projects=("no-such-project-for-integration-tests",))
-    denied_client = OpenProjectClient(denied_settings)
-    await denied_client.initialize()
+    denied_client = await open_client(denied_settings)
 
     denied_result = await denied_client.action_capability.list_capabilities(capability_id=capability_id)
     assert denied_result.count == 0

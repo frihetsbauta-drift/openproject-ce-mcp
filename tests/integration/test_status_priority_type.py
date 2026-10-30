@@ -47,7 +47,7 @@ async def test_get_priority(client: OpenProjectClient) -> None:
     assert priority.name
 
 
-async def test_list_priorities_stamps_hidden_field_for_masking(client: OpenProjectClient) -> None:
+async def test_list_priorities_stamps_hidden_field_for_masking(client: OpenProjectClient, open_client) -> None:
     """Regression: priority/notification/file_link/emoji_reaction were
     missing from HIDE_FIELD_ENV_BY_ENTITY entirely, so _apply_hidden_fields
     never stamped a _hidden_keys marker on their results, unlike every other
@@ -57,8 +57,7 @@ async def test_list_priorities_stamps_hidden_field_for_masking(client: OpenProje
     is present against a live payload; the drop-from-response behavior is
     already covered by the tool layer's own unit tests (mocked client)."""
     hidden_settings = dataclasses.replace(client.settings, hidden_fields={"priority": ("color",)})
-    hidden_client = OpenProjectClient(hidden_settings)
-    await hidden_client.initialize()
+    hidden_client = await open_client(hidden_settings)
 
     result = await hidden_client.status_priority_type.list_priorities()
     assert result.count > 0

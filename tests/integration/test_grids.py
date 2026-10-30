@@ -20,14 +20,15 @@ from .conftest import disposable_project_identifier
 pytestmark = pytest.mark.integration
 
 
-async def test_list_grids(client: OpenProjectClient, grid_ids: list[int]) -> None:
+async def test_list_grids(client: OpenProjectClient) -> None:
     # A brand-new instance genuinely has zero grids until one is visited/
     # created (a project overview grid is not seeded at project creation) --
-    # create one instead of assuming pre-existing state.
+    # create one instead of assuming pre-existing state. A /my/page grid
+    # cannot be deleted through the API (see the delete step below), so it is
+    # not registered for cleanup.
     created = await client.grid.create(name="[integration-test] list probe", scope="/my/page", confirm=True)
     assert created.ready, created.validation_errors
     assert created.grid_id is not None
-    grid_ids.append(created.grid_id)
 
     result = await client.grid.list()
     assert result is not None
@@ -35,7 +36,7 @@ async def test_list_grids(client: OpenProjectClient, grid_ids: list[int]) -> Non
     assert result.results[0].scope
 
 
-async def test_create_get_update_delete_grid(client: OpenProjectClient, grid_ids: list[int]) -> None:
+async def test_create_get_update_delete_grid(client: OpenProjectClient) -> None:
     # Create
     result = await client.grid.create(
         name="[integration-test] grid",
@@ -47,7 +48,6 @@ async def test_create_get_update_delete_grid(client: OpenProjectClient, grid_ids
     assert result.ready, result.validation_errors
     grid_id = result.grid_id
     assert grid_id is not None and grid_id > 0
-    grid_ids.append(grid_id)
 
     # Read
     grid = await client.grid.get(grid_id)
@@ -76,18 +76,15 @@ async def test_create_get_update_delete_grid(client: OpenProjectClient, grid_ids
         await client.grid.delete(grid_id=grid_id, confirm=True)
 
 
-async def test_update_grid_changes_dimensions(client: OpenProjectClient, project_refs: list[str]) -> None:
+async def test_update_grid_changes_dimensions(client: OpenProjectClient, project_refs: list[str], open_client) -> None:
     """update_grid POSTs grids/{id}/form then PATCHes grids/{id}. Uses a
     freshly created, disposable project
     for the grid's scope: OpenProject only allows one grid per scope, and
     test_project already has one (its own overview dashboard), so creating a
     second grid there fails with "Scope has already been taken". Cleanup of
-    the grid itself happens implicitly when project_refs deletes the project
-    (not via the grid_ids fixture, since that fixture's client is scoped only
-    to test_project's write allowlist, not this disposable project)."""
+    the grid itself happens implicitly when project_refs deletes the project."""
     unrestricted_settings = dataclasses.replace(client.settings, read_projects=("*",), write_projects=("*",))
-    unrestricted_client = OpenProjectClient(unrestricted_settings)
-    await unrestricted_client.initialize()
+    unrestricted_client = await open_client(unrestricted_settings)
 
     new_identifier = disposable_project_identifier()
     create_project_result = await unrestricted_client.project.create(
@@ -117,14 +114,13 @@ async def test_update_grid_changes_dimensions(client: OpenProjectClient, project
     assert updated.result.column_count == 4
 
 
-async def test_create_grid_rejects_hidden_name_field(client: OpenProjectClient, test_project: str) -> None:
+async def test_create_grid_rejects_hidden_name_field(client: OpenProjectClient, test_project: str, open_client) -> None:
     """Regression: create_grid/update_grid bypassed OPENPROJECT_HIDE_GRID_FIELDS
     entirely on writes -- the "grid" entity was missing from
     HIDE_FIELD_ENV_BY_ENTITY altogether, so no grid field could ever be
     hidden on a write, unlike every other write-capable entity."""
     hidden_settings = dataclasses.replace(client.settings, hidden_fields={"grid": ("name",)})
-    hidden_client = OpenProjectClient(hidden_settings)
-    await hidden_client.initialize()
+    hidden_client = await open_client(hidden_settings)
 
     with pytest.raises(InvalidInputError, match="OPENPROJECT_HIDE_GRID_FIELDS"):
         await hidden_client.grid.create(
@@ -135,7 +131,7 @@ async def test_create_grid_rejects_hidden_name_field(client: OpenProjectClient, 
 
 
 async def test_create_update_delete_grid_denied_outside_write_allowlist(
-    client: OpenProjectClient, project_refs: list[str]
+    client: OpenProjectClient, project_refs: list[str], open_client
 ) -> None:
     """Must use a project-scoped grid, not /my/page -- ensure_grid_allowed
     (grid_policy.py) deliberately bypasses the allowlist entirely for
@@ -160,12 +156,10 @@ async def test_create_update_delete_grid_denied_outside_write_allowlist(
         read_projects=("*",),
         write_projects=("no-such-project-for-integration-tests",),
     )
-    write_denied_client = OpenProjectClient(write_denied_settings)
-    await write_denied_client.initialize()
+    write_denied_client = await open_client(write_denied_settings)
 
     unrestricted_settings = dataclasses.replace(client.settings, read_projects=("*",), write_projects=("*",))
-    unrestricted_client = OpenProjectClient(unrestricted_settings)
-    await unrestricted_client.initialize()
+    unrestricted_client = await open_client(unrestricted_settings)
 
     new_identifier = disposable_project_identifier()
     create_project_result = await unrestricted_client.project.create(

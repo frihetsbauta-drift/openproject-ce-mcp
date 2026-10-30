@@ -41,9 +41,12 @@ import pytest
 from openproject_ce_mcp.client import NotFoundError, OpenProjectClient
 from openproject_ce_mcp.config import Settings
 
-# tools/ is not a package; the benchmark script loads the same guard the same way.
+# tools/ is not a package; the benchmark script loads the same guard the same way. This directory joins the
+# path too, so a unit test that loads this file by path finds the helper next to it.
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools"))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 import live_target_guard  # noqa: E402
+from _live_cleanup import ClientRegistry, delete_all  # noqa: E402
 
 # Directory containing docker/test/compose.yml -- `docker compose exec` needs
 # to run with this as its cwd (or -f pointed at it) to resolve the service name.
@@ -233,36 +236,38 @@ def _integration_settings() -> Settings | None:
     )
 
 
+@pytest.fixture(scope="function")
+async def open_client():
+    """Opens clients and closes every one of them after the test, in reverse order."""
+    registry = ClientRegistry()
+    try:
+        yield registry.open
+    finally:
+        await registry.close()
+
+
 @pytest.fixture
-async def client():
+async def client(open_client):
     settings = _integration_settings()
     if settings is None:
         pytest.skip("OPENPROJECT_BASE_URL / OPENPROJECT_API_TOKEN not set")
-    client_instance = OpenProjectClient(settings)
-    await client_instance.initialize()
-    return client_instance
+    return await open_client(settings)
 
 
 @pytest.fixture
-async def start_scoped_client():
+async def start_scoped_client(open_client):
     """Starts clients with their own project scopes, each at the moment the
     test asks, and closes them after the test."""
     settings = _integration_settings()
     if settings is None:
         pytest.skip("OPENPROJECT_BASE_URL / OPENPROJECT_API_TOKEN not set")
-    started: list[OpenProjectClient] = []
 
     async def start(*, read_projects: tuple[str, ...], write_projects: tuple[str, ...]) -> OpenProjectClient:
-        scoped = OpenProjectClient(
+        return await open_client(
             dataclasses.replace(settings, read_projects=read_projects, write_projects=write_projects)
         )
-        started.append(scoped)
-        await scoped.initialize()
-        return scoped
 
-    yield start
-    for scoped in started:
-        await scoped.aclose()
+    return start
 
 
 @pytest.fixture
@@ -288,7 +293,7 @@ async def openproject_version() -> tuple[int, int]:
 
 
 @pytest.fixture
-async def denied_client():
+async def denied_client(open_client):
     """A client scoped to deny writes to ``test_project`` while still allowing reads.
 
     Read stays scoped to ``test_project`` so a live HAL link resolving to that
@@ -304,13 +309,11 @@ async def denied_client():
         settings,
         write_projects=("no-such-project-for-integration-tests",),
     )
-    client_instance = OpenProjectClient(denied_settings)
-    await client_instance.initialize()
-    return client_instance
+    return await open_client(denied_settings)
 
 
 @pytest.fixture
-async def admin_write_disabled_client():
+async def admin_write_disabled_client(open_client):
     """A client with OPENPROJECT_ENABLE_ADMIN_WRITE off, everything else
     (including enable_admin_read and both project allowlists) identical to
     the normal integration client -- for the Users/Groups admin-write-disabled
@@ -327,13 +330,11 @@ async def admin_write_disabled_client():
     if settings is None:
         pytest.skip("OPENPROJECT_BASE_URL / OPENPROJECT_API_TOKEN not set")
     disabled_settings = dataclasses.replace(settings, enable_admin_write=False)
-    client_instance = OpenProjectClient(disabled_settings)
-    await client_instance.initialize()
-    return client_instance
+    return await open_client(disabled_settings)
 
 
 @pytest.fixture
-async def hide_custom_fields_client():
+async def hide_custom_fields_client(open_client):
     """A client with every custom field hidden (OPENPROJECT_HIDE_CUSTOM_FIELDS
     equivalent, via a `cf_*` glob), for the hidden-custom-field-filter
     rejection test -- read/write scope stays identical to the default
@@ -342,13 +343,11 @@ async def hide_custom_fields_client():
     if settings is None:
         pytest.skip("OPENPROJECT_BASE_URL / OPENPROJECT_API_TOKEN not set")
     hidden_settings = dataclasses.replace(settings, hide_custom_fields=("cf_*",))
-    client_instance = OpenProjectClient(hidden_settings)
-    await client_instance.initialize()
-    return client_instance
+    return await open_client(hidden_settings)
 
 
 @pytest.fixture
-async def restricted_client():
+async def restricted_client(open_client):
     """A client authenticated as a genuinely permission-restricted OpenProject
     user (log_own_time granted, log_time/view_time_entries/manage_members
     withheld -- see docker/test/seed.rb) -- unlike denied_client (which tests
@@ -365,9 +364,7 @@ async def restricted_client():
     if settings is None:
         pytest.skip("OPENPROJECT_BASE_URL / OPENPROJECT_API_TOKEN not set")
     restricted_settings = dataclasses.replace(settings, api_token=restricted_token)
-    client_instance = OpenProjectClient(restricted_settings)
-    await client_instance.initialize()
-    return client_instance
+    return await open_client(restricted_settings)
 
 
 # ---------------------------------------------------------------------------
@@ -380,66 +377,37 @@ async def wp_ids(client: OpenProjectClient):
     """Yields a list to append created WP IDs; deletes them all after the test."""
     created: list[int] = []
     yield created
-    for wp_id in created:
-        try:
-            await client.work_package.delete(work_package_id=wp_id, confirm=True)
-        except Exception:
-            pass
+    await delete_all(
+        "work package", created, lambda wp_id: client.work_package.delete(work_package_id=wp_id, confirm=True)
+    )
 
 
 @pytest.fixture
 async def version_ids(client: OpenProjectClient):
     created: list[int] = []
     yield created
-    for version_id in created:
-        try:
-            await client.version.delete(version_id=version_id, confirm=True)
-        except Exception:
-            pass
+    await delete_all("version", created, lambda version_id: client.version.delete(version_id=version_id, confirm=True))
 
 
 @pytest.fixture
 async def news_ids(client: OpenProjectClient):
     created: list[int] = []
     yield created
-    for news_id in created:
-        try:
-            await client.news.delete(news_id=news_id, confirm=True)
-        except Exception:
-            pass
+    await delete_all("news", created, lambda news_id: client.news.delete(news_id=news_id, confirm=True))
 
 
 @pytest.fixture
 async def time_entry_ids(client: OpenProjectClient):
     created: list[int] = []
     yield created
-    for te_id in created:
-        try:
-            await client.time_entry.delete(time_entry_id=te_id, confirm=True)
-        except Exception:
-            pass
-
-
-@pytest.fixture
-async def grid_ids(client: OpenProjectClient):
-    created: list[int] = []
-    yield created
-    for grid_id in created:
-        try:
-            await client.grid.delete(grid_id=grid_id, confirm=True)
-        except Exception:
-            pass
+    await delete_all("time entry", created, lambda te_id: client.time_entry.delete(time_entry_id=te_id, confirm=True))
 
 
 @pytest.fixture
 async def board_ids(client: OpenProjectClient):
     created: list[int] = []
     yield created
-    for board_id in created:
-        try:
-            await client.board.delete(board_id=board_id, confirm=True)
-        except Exception:
-            pass
+    await delete_all("board", created, lambda board_id: client.board.delete(board_id=board_id, confirm=True))
 
 
 @pytest.fixture
@@ -455,11 +423,7 @@ async def meeting_ids(client: OpenProjectClient):
     """
     created: list[int] = []
     yield created
-    for meeting_id in created:
-        try:
-            await client.meeting.delete(meeting_id=meeting_id, confirm=True)
-        except Exception:
-            pass
+    await delete_all("meeting", created, lambda meeting_id: client.meeting.delete(meeting_id=meeting_id, confirm=True))
 
 
 @pytest.fixture
@@ -468,11 +432,13 @@ async def recurring_meeting_ids(client: OpenProjectClient):
     them all after the test."""
     created: list[int] = []
     yield created
-    for recurring_meeting_id in created:
-        try:
-            await client.recurring_meeting.delete(recurring_meeting_id=recurring_meeting_id, confirm=True)
-        except Exception:
-            pass
+    await delete_all(
+        "recurring meeting",
+        created,
+        lambda recurring_meeting_id: client.recurring_meeting.delete(
+            recurring_meeting_id=recurring_meeting_id, confirm=True
+        ),
+    )
 
 
 @pytest.fixture
@@ -486,11 +452,9 @@ async def reminder_ids(client: OpenProjectClient):
     """
     created: list[int] = []
     yield created
-    for reminder_id in created:
-        try:
-            await client.reminder.delete(reminder_id=reminder_id, confirm=True)
-        except Exception:
-            pass
+    await delete_all(
+        "reminder", created, lambda reminder_id: client.reminder.delete(reminder_id=reminder_id, confirm=True)
+    )
 
 
 @pytest.fixture
@@ -502,11 +466,7 @@ async def group_ids(client: OpenProjectClient):
     """
     created: list[int] = []
     yield created
-    for group_id in created:
-        try:
-            await client.group.delete(group_id=group_id, confirm=True)
-        except Exception:
-            pass
+    await delete_all("group", created, lambda group_id: client.group.delete(group_id=group_id, confirm=True))
 
 
 @pytest.fixture
@@ -518,11 +478,7 @@ async def storage_ids(client: OpenProjectClient):
     """
     created: list[int] = []
     yield created
-    for storage_id in created:
-        try:
-            await client.storage.delete(storage_id, confirm=True)
-        except Exception:
-            pass
+    await delete_all("storage", created, lambda storage_id: client.storage.delete(storage_id, confirm=True))
 
 
 @pytest.fixture
@@ -534,15 +490,11 @@ async def user_ids(client: OpenProjectClient):
     """
     created: list[int] = []
     yield created
-    for user_id in created:
-        try:
-            await client.user.delete(user_id, confirm=True)
-        except Exception:
-            pass
+    await delete_all("user", created, lambda user_id: client.user.delete(user_id, confirm=True))
 
 
 @pytest.fixture
-async def second_user_client(client: OpenProjectClient, user_ids: list[int]):
+async def second_user_client(client: OpenProjectClient, user_ids: list[int], open_client):
     """Creates a real, disposable second OpenProject user via create_user, then
     mints an API token for them via a Rails-runner side channel (the same
     mechanism docker/test/seed.rb uses for the admin's own token — OpenProject's
@@ -590,9 +542,7 @@ async def second_user_client(client: OpenProjectClient, user_ids: list[int]):
     token = _run_rails_script(script, result_key="TOKEN")
 
     second_settings = dataclasses.replace(client.settings, api_token=token)
-    second_client = OpenProjectClient(second_settings)
-    await second_client.initialize()
-    return user_id, second_client
+    return user_id, await open_client(second_settings)
 
 
 @pytest.fixture
@@ -605,11 +555,11 @@ async def user_non_working_time_ids(client: OpenProjectClient):
     """
     created: list[tuple[str, int]] = []
     yield created
-    for user_ref, non_working_time_id in created:
-        try:
-            await client.user_non_working_time.delete(user_ref, non_working_time_id, confirm=True)
-        except Exception:
-            pass
+    await delete_all(
+        "user non working time",
+        created,
+        lambda pair: client.user_non_working_time.delete(pair[0], pair[1], confirm=True),
+    )
 
 
 @pytest.fixture
@@ -622,11 +572,9 @@ async def user_working_hours_ids(client: OpenProjectClient):
     """
     created: list[tuple[str, int]] = []
     yield created
-    for user_ref, working_hours_id in created:
-        try:
-            await client.user_working_hours.delete(user_ref, working_hours_id, confirm=True)
-        except Exception:
-            pass
+    await delete_all(
+        "user working hours", created, lambda pair: client.user_working_hours.delete(pair[0], pair[1], confirm=True)
+    )
 
 
 @pytest.fixture
@@ -762,7 +710,7 @@ def meeting_title_in_database() -> Callable[[int], str | None]:
 
 
 @pytest.fixture
-async def project_refs(client: OpenProjectClient):
+async def project_refs(client: OpenProjectClient, open_client):
     """Yields a list to append created project identifiers; deletes them all
     after the test.
 
@@ -779,24 +727,23 @@ async def project_refs(client: OpenProjectClient):
         read_projects=("*",),
         write_projects=("*",),
     )
-    unrestricted_client = OpenProjectClient(unrestricted_settings)
-    await unrestricted_client.initialize()
+    unrestricted_client = await open_client(unrestricted_settings)
 
-    created: list[str] = []
-    yield created
-    for project_ref in created:
-        try:
-            await unrestricted_client.project.delete(project_ref=project_ref, confirm=True)
-        except Exception:
-            continue
+    async def delete_and_wait(project_ref: str) -> None:
+        await unrestricted_client.project.delete(project_ref=project_ref, confirm=True)
         # The delete runs as a background job; the next test's project create or work package form
         # deadlocks or fails on 16.0 while it still holds the nested-set rows.
         for _ in range(60):
             try:
                 await unrestricted_client.project.get(project_ref)
             except NotFoundError:
-                break
+                return
             await asyncio.sleep(0.5)
+        raise TimeoutError("the background delete job did not finish within 30 s")
+
+    created: list[str] = []
+    yield created
+    await delete_all("project", created, delete_and_wait)
 
 
 _WP_MULTI_VERSIONS_CAPABILITY_CHECK = "Setting.respond_to?(:work_package_multiple_versions=)"

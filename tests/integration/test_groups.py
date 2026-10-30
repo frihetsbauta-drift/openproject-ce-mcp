@@ -131,14 +131,13 @@ async def test_create_and_delete_group_denied_when_admin_write_disabled(
         await admin_write_disabled_client.group.delete(999999999, confirm=True)
 
 
-async def test_create_group_rejects_hidden_name_field(client: OpenProjectClient) -> None:
+async def test_create_group_rejects_hidden_name_field(client: OpenProjectClient, open_client) -> None:
     """Regression: attachment/reminder/relation/group writes bypassed the
     hidden-fields guard -- group.name/members could be written even with
     OPENPROJECT_HIDE_GROUP_FIELDS set, unlike every other write-capable
     entity."""
     hidden_settings = dataclasses.replace(client.settings, hidden_fields={"group": ("name",)})
-    hidden_client = OpenProjectClient(hidden_settings)
-    await hidden_client.initialize()
+    hidden_client = await open_client(hidden_settings)
 
     with pytest.raises(InvalidInputError, match="OPENPROJECT_HIDE_GROUP_FIELDS"):
         await hidden_client.group.create(name=f"[integration-test] {uuid.uuid4().hex[:8]}", confirm=False)

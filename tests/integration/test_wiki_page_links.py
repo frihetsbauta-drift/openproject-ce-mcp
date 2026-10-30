@@ -200,7 +200,7 @@ async def test_create_wiki_page_link_preview_without_confirm_does_not_write(
 
 
 async def test_create_wiki_page_link_denies_work_package_outside_write_allowlist(
-    client: OpenProjectClient, test_project: str, wp_ids: list[int]
+    client: OpenProjectClient, test_project: str, wp_ids: list[int], open_client
 ) -> None:
     wp_result = await client.work_package.create(
         project=test_project,
@@ -213,8 +213,7 @@ async def test_create_wiki_page_link_denies_work_package_outside_write_allowlist
     wp_ids.append(work_package_id)
 
     restricted_settings = dataclasses.replace(client.settings, write_projects=("no-such-project",))
-    restricted_client = OpenProjectClient(restricted_settings)
-    await restricted_client.initialize()
+    restricted_client = await open_client(restricted_settings)
 
     with pytest.raises(PermissionDeniedError):
         await restricted_client.wiki_page_link.create(
