@@ -106,14 +106,14 @@ to install and discover.
 
 Thanks to our contributor: [@feci](https://github.com/feci) ([#35](https://github.com/jtauschl/openproject-ce-mcp/pull/35), [#36](https://github.com/jtauschl/openproject-ce-mcp/pull/36), [#43](https://github.com/jtauschl/openproject-ce-mcp/pull/43), [#44](https://github.com/jtauschl/openproject-ce-mcp/pull/44)).
 
+## [0.4.5] - Unreleased
+
 ## [0.4.4] - 2026-10-28
 
 ### Security
 
-- The package requires `certifi` 2026.10.18 or newer: older bundles trust emSign
-  roots whose intermediate keys are compromised, and `httpx` verifies the TLS
-  connection to OpenProject against that bundle. Upgrade with `uv tool upgrade
-  openproject-ce-mcp` or `pip install -U openproject-ce-mcp`.
+- The package requires `certifi` 2026.10.18 or newer, whose bundle drops the
+  emSign roots with compromised intermediate keys.
 
 ## [0.4.3] - 2026-10-28
 
