@@ -9,9 +9,9 @@
   <img src="https://raw.githubusercontent.com/jtauschl/openproject-ce-mcp/main/img/openproject-ce-mcp-hero.jpg" alt="Hero image showing a Python terminal and an OpenProject board connected by a structured data stream." width="960">
 </p>
 
-An MCP server for OpenProject that lets local AI agents read and manage project data through structured, guarded tools.
+An MCP server for OpenProject that lets AI agents read and manage project data through structured, guarded tools.
 
-The server runs as a local subprocess of your MCP client over stdio. It wraps OpenProject API v3 and exposes typed tools for projects, work packages, memberships, versions, boards, time entries, and more.
+By default, the server runs as a local subprocess of your MCP client over stdio. Optional server hosting uses authenticated Streamable HTTP. It wraps OpenProject API v3 and exposes typed tools for projects, work packages, memberships, versions, boards, time entries, and more.
 
 > **Reading this on PyPI?** All links below point to the GitHub repository —
 > the `docs/` pages and images ship in the git repo and source distribution,
@@ -72,7 +72,7 @@ This MCP server targets **OpenProject Community Edition** only. It does not supp
 
 ## How it works
 
-- Communicates with the MCP client over stdio — no remote server, no persistent storage
+- Communicates over stdio by default, or opt-in authenticated Streamable HTTP — no persistent MCP storage
 - Read tools are registered by default, but no project data is accessible until `OPENPROJECT_READ_PROJECTS` is configured
 - The 5 core write categories are enabled by default, but stay inert until a project is listed in `OPENPROJECT_WRITE_PROJECTS` — that allowlist, not the category flags, is the real gate; personal-data and admin writes stay opt-in separately
 - Create and update operations validate the payload against OpenProject form endpoints before writing; delete and other simple operations execute directly once confirmed
@@ -122,6 +122,14 @@ installs, and uninstalling, and [Clients](https://github.com/jtauschl/openprojec
 setup guides.
 
 ---
+
+## Server hosting (optional)
+
+`openproject-ce-mcp serve` exposes `/mcp` over Streamable HTTP with a required,
+separate bearer token. All connected clients use one configured OpenProject
+identity; this is not multi-user OAuth. Existing stdio setups are unchanged.
+See [HTTP hosting](https://github.com/jtauschl/openproject-ce-mcp/blob/main/docs/http-hosting.md)
+for credentials, HTTPS/reverse-proxy setup, the Docker example, and limitations.
 
 ## Documentation
 

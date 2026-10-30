@@ -37,6 +37,9 @@ dependencies = [
   # which does not exist before 2.0.0 -- a caller could otherwise install a
   # 1.x version that fails to import at all.
   "mcp>=2,<3",
+  # Direct imports for opt-in HTTP hosting (also used by the MCP SDK).
+  "starlette>=0.27,<2",
+  "uvicorn>=0.31.1,<1",
 ]
 
 [project.optional-dependencies]

@@ -15,6 +15,7 @@ from mcp.server.mcpserver import MCPServer
 from . import __version__
 from .client import OpenProjectClient
 from .config import ConfigError, Settings, configure_logging, legacy_env_warnings
+from .http_server import HttpSettings, run_http_server
 from .strict_mcpserver import StrictMCPServer, verify_strict_dispatch
 from .tools import register_tools
 
@@ -160,7 +161,7 @@ def create_app(settings: Settings) -> StrictMCPServer:
     return mcp
 
 
-def _run_server() -> None:
+def _run_server(*, http: HttpSettings | None = None) -> None:
     # os.environ is already the fully-merged view here — the MCP client launcher
     # injects the config file's env block directly as this subprocess's
     # environment, so no client-config-file merging is needed (unlike doctor,
@@ -170,12 +171,17 @@ def _run_server() -> None:
         print(f"[WARN] {warning}", file=sys.stderr)
 
     settings = Settings.from_env()
+    if http is not None and http.token == settings.api_token:
+        raise ConfigError("OPENPROJECT_MCP_HTTP_TOKEN must differ from OPENPROJECT_API_TOKEN")
     app = create_app(settings)
     # Fails loudly at startup if a future `mcp` SDK upgrade changes how
     # MCPServer.call_tool is wired into request dispatch, instead of silently
     # letting StrictMCPServer's validation go dark. See strict_mcpserver.py.
     asyncio.run(verify_strict_dispatch(app))
-    app.run(transport="stdio")
+    if http is None:
+        app.run(transport="stdio")
+    else:
+        run_http_server(app, http)
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -190,7 +196,7 @@ def _build_parser() -> argparse.ArgumentParser:
         epilog="Run 'openproject-ce-mcp doctor' to diagnose setup issues, or 'openproject-ce-mcp configure --help' for setup options.",
     )
     parser.add_argument("-V", "--version", action="version", version=f"openproject-ce-mcp {__version__}")
-    sub = parser.add_subparsers(dest="command", metavar="{configure,doctor}")
+    sub = parser.add_subparsers(dest="command", metavar="{configure,doctor,serve}")
     sub.add_parser(
         "configure",
         add_help=False,  # forwarded verbatim to the setup CLI, which owns --help
@@ -199,6 +205,13 @@ def _build_parser() -> argparse.ArgumentParser:
     sub.add_parser(
         "doctor",
         help="Diagnose MCP setup and connectivity issues.",
+    )
+    serve = sub.add_parser("serve", help="Host /mcp over Streamable HTTP (requires OPENPROJECT_MCP_HTTP_TOKEN).")
+    serve.add_argument("--host", default="127.0.0.1", help="Bind address (default: 127.0.0.1).")
+    serve.add_argument("--port", type=int, default=8000, help="Bind port (default: 8000).")
+    serve.add_argument(
+        "--public-url",
+        help="External HTTPS origin, without /mcp, for Host/Origin checks behind a reverse proxy.",
     )
     return parser
 
@@ -263,6 +276,15 @@ def main() -> None:
         from .setup_cli import main as setup_main
 
         setup_main(sys.argv[2:])
+        return
+
+    if arg == "serve":
+        args = parser.parse_args(sys.argv[1:])
+        try:
+            http = HttpSettings.from_env(host=args.host, port=args.port, public_url=args.public_url)
+            _run_server(http=http)
+        except ConfigError as exc:
+            parser.error(str(exc))
         return
 
     if arg == "doctor":
