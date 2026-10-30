@@ -47,6 +47,9 @@ dependencies = [
   # Not imported: httpx verifies TLS against certifi's bundle. 2026.10.18 is the first one without the
   # emSign roots whose intermediate keys are compromised, so an install never trusts them.
   "certifi>=2026.10.18",
+  # Direct imports for opt-in HTTP hosting (also used by the MCP SDK).
+  "starlette>=0.27,<2",
+  "uvicorn>=0.31.1,<1",
 ]
 
 [project.optional-dependencies]

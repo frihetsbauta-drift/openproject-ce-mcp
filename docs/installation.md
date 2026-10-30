@@ -42,8 +42,9 @@ the token immediately — it is only shown once. Format: `opapi-...`.
 ## Install
 
 This package ships the globally-runnable console commands `openproject-ce-mcp`
-and `openproject-ce-mcp-setup`. The subcommands `openproject-ce-mcp configure`
-and `openproject-ce-mcp doctor` set it up and check it;
+and `openproject-ce-mcp-setup`. The subcommands `openproject-ce-mcp configure`,
+`openproject-ce-mcp doctor` and `openproject-ce-mcp serve` set it up, check it
+and host it over HTTP;
 `openproject-ce-mcp-setup` is an alias for `openproject-ce-mcp configure`.
 Both commands are the kind of standalone CLI tool [`pipx`](https://pipx.pypa.io/) is designed for:
 each tool gets its own isolated environment while staying available on your

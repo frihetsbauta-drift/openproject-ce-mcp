@@ -11,9 +11,9 @@
   <img src="https://raw.githubusercontent.com/jtauschl/openproject-ce-mcp/main/img/openproject-ce-mcp-hero.jpg" alt="Hero image showing a Python terminal and an OpenProject board connected by a structured data stream." width="960">
 </p>
 
-An MCP server for OpenProject that lets local AI agents read and manage project data through structured, guarded tools.
+An MCP server for OpenProject that lets AI agents read and manage project data through structured, guarded tools.
 
-The server runs as a local subprocess of your MCP client over stdio. It wraps OpenProject API v3 and exposes typed tools for projects, work packages, memberships, versions, boards, meetings, time entries, and more.
+By default, the server runs as a local subprocess of your MCP client over stdio. Optional server hosting uses authenticated Streamable HTTP. It wraps OpenProject API v3 and exposes typed tools for projects, work packages, memberships, versions, boards, meetings, time entries, and more.
 
 > **Reading this on PyPI?** All links below point to the GitHub repository —
 > the `docs/` pages and images ship in the git repo and source distribution,
@@ -79,7 +79,7 @@ This MCP server targets **OpenProject Community Edition** only. It does not supp
 
 ## How it works
 
-- Communicates with the MCP client over stdio — no remote server, no persistent storage
+- Communicates over stdio by default, or opt-in authenticated Streamable HTTP — no persistent MCP storage
 - The core read groups (projects, work packages, memberships, versions, boards, meetings) are on by default, but until `OPENPROJECT_READ_PROJECTS` lists a project, only project-independent tools such as `list_statuses`, `list_types` and `get_current_user` are registered. Personal, admin, user-schedule, and extended metadata tools are opt-in
 - The project-scoped write categories are on by default, but their tools are registered only when both `OPENPROJECT_READ_PROJECTS` and `OPENPROJECT_WRITE_PROJECTS` list a project, and a write reaches only projects in both. The allowlists, not the category flags, are the real gate. Personal-data, admin, and user-schedule writes are opt-in
 - Create and update operations validate the payload against OpenProject form endpoints before writing; delete and other simple operations execute directly once confirmed
@@ -129,6 +129,12 @@ installs, and uninstalling, and [Clients](https://github.com/jtauschl/openprojec
 setup guides.
 
 ---
+
+## Server hosting (optional)
+
+`openproject-ce-mcp serve` exposes `/mcp` over Streamable HTTP with a required,
+separate bearer token. All connected clients use one configured OpenProject
+identity; this is not multi-user OAuth. Existing stdio setups are unchanged.
 
 ## Documentation
 
