@@ -108,6 +108,14 @@ Thanks to our contributor: [@feci](https://github.com/feci) ([#35](https://githu
 
 ## [0.4.5] - Unreleased
 
+### Added
+
+- `get_project_phase` returns the `active` flag.
+
+### Fixed
+
+- `get_project_phase` now reports the phase definition, which was always empty.
+
 ## [0.4.4] - 2026-10-28
 
 ### Security

@@ -460,13 +460,12 @@ async def test_instance_configuration_and_project_phase_definitions() -> None:
                     "_type": "ProjectPhase",
                     "id": 5,
                     "name": "Executing",
-                    "startDate": "2026-03-10",
-                    "finishDate": "2026-03-24",
+                    "active": True,
                     "createdAt": "2026-03-10T10:00:00Z",
                     "updatedAt": "2026-03-12T10:00:00Z",
                     "_links": {
                         "project": {"href": "/api/v3/projects/1", "title": "Demo"},
-                        "projectPhaseDefinition": {"href": "/api/v3/project_phase_definitions/2", "title": "Executing"},
+                        "definition": {"href": "/api/v3/project_phase_definitions/2", "title": "Executing"},
                     },
                 },
                 request=request,
@@ -487,6 +486,10 @@ async def test_instance_configuration_and_project_phase_definitions() -> None:
     assert phase.finish_gate == "Approved"
     assert project_phase.name == "Executing"
     assert project_phase.phase_definition_id == 2
+    assert project_phase.phase_definition == "Executing"
+    assert project_phase.active is True
+    assert project_phase.start_date is None
+    assert project_phase.finish_date is None
     assert project_phase.project == "Demo"
 
     await client.aclose()

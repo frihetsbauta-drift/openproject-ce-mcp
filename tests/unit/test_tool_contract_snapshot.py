@@ -4030,7 +4030,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "capability_env_vars": ("OPENPROJECT_ENABLE_PROJECT_READ",),
     },
     "get_project_phase": {
-        "description_hash": "68f4ba688a585f4b6213ec36a1ff826ffb93a6f17bed64113b48549963a1624a",
+        "description_hash": "6b2924c2e2825254e3cb898055d244de526411bd49a5455540cc13d6a187c201",
         "input_schema": {
             "properties": {"phase_id": {"title": "Phase Id", "type": "integer"}},
             "required": ["phase_id"],
@@ -4049,6 +4049,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
                     "title": "Phase Definition Id",
                 },
                 "phase_definition": {"anyOf": [{"type": "string"}, {"type": "null"}], "title": "Phase Definition"},
+                "active": {"title": "Active", "type": "boolean"},
                 "start_date": {"anyOf": [{"type": "string"}, {"type": "null"}], "title": "Start Date"},
                 "finish_date": {"anyOf": [{"type": "string"}, {"type": "null"}], "title": "Finish Date"},
                 "created_at": {"anyOf": [{"type": "string"}, {"type": "null"}], "title": "Created At"},
@@ -4061,6 +4062,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
                 "project",
                 "phase_definition_id",
                 "phase_definition",
+                "active",
                 "start_date",
                 "finish_date",
                 "created_at",

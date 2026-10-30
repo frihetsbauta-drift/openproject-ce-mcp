@@ -47,3 +47,6 @@ async def test_get_project_phase(client: OpenProjectClient, seed_project_phase_i
     phase = await skip_if_unsupported(lambda: client.project.get_phase(seed_project_phase_id))
     assert phase.id == seed_project_phase_id
     assert phase.name
+    assert phase.phase_definition_id is not None
+    assert phase.phase_definition
+    assert phase.active is True
