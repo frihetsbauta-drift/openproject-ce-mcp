@@ -463,7 +463,7 @@ end
 # Give the seed work package an actual value for the new custom field so a
 # read-path integration test has something real to assert on, not just
 # "the key exists but is nil".
-seed_wp = project.work_packages.first
+seed_wp = project.work_packages.find_by(subject: "Seed work package")
 if seed_wp && seed_wp.custom_value_for(custom_field)&.value.to_s.empty?
   seed_wp.custom_field_values = { custom_field.id => "Seeded custom field value" }
   seed_wp.save!
