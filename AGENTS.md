@@ -6,7 +6,7 @@ server over authenticated Streamable HTTP. This file tells an agent how to keep
 that working. Upstream's own rules are in `CONTRIBUTING.md`.
 
 This repository is public. Never commit secrets, `stack.env`, compose files from
-the server, or public endpoint URLs.
+the server, hostnames, usernames, stack IDs or public endpoint URLs.
 
 ## Branches
 
